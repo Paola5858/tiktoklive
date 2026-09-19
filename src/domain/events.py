@@ -13,9 +13,12 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.domain.errors import InvalidEventError
+
+if TYPE_CHECKING:
+    from src.domain.priorities import Priority
 
 
 class EventType(str, Enum):
@@ -37,12 +40,15 @@ class EventStatus(str, Enum):
     RECEIVED = "received"
     NORMALIZED = "normalized"
     ACCEPTED = "accepted"
+    DEDUPLICATED = "deduplicated"  # identificado como duplicata, descartado
+    CLASSIFIED = "classified"  # prioridade atribuída, pronto para enfileirar
     QUEUED = "queued"
     PROCESSING = "processing"
     PROCESSED = "processed"
     AGGREGATED = "aggregated"
     DROPPED = "dropped"
     FAILED = "failed"
+    REJECTED = "rejected"  # falhou na validação de entrada
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,3 +127,65 @@ class Event:
             separators=(",", ":"),
             default=str,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class AggregatedEvent:
+    """Múltiplos eventos do mesmo tipo colapsados em um único registro.
+
+    Produzido pelo EventAggregator quando eventos P4 ou floods de comentário
+    repetitivo são agrupados numa janela temporal.
+
+    Invariantes:
+    - count >= 2 (um único evento não é um aggregate)
+    - event_type é o tipo dos eventos originais
+    - representative_payload é o payload do primeiro evento da janela
+    - priority é a prioridade dos eventos originais
+    - source é a fonte dos eventos originais (devem ser da mesma fonte)
+
+    O que NÃO é preservado:
+    - Identidade individual de cada evento (event_id, user por evento)
+    - Timestamps individuais (apenas window_start e window_end)
+
+    Semântica: o consumer deve interpretar o count como "N eventos
+    do tipo X ocorreram nesta janela", não como um evento individual.
+    """
+
+    event_type: EventType
+    count: int
+    window_start: datetime
+    window_end: datetime
+    source: str
+    representative_payload: dict[str, Any]
+    priority: "Priority"
+    aggregate_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def __post_init__(self) -> None:
+        if self.count < 2:
+            raise InvalidEventError("AggregatedEvent.count deve ser >= 2")
+        if not isinstance(self.event_type, EventType):
+            raise InvalidEventError(
+                "AggregatedEvent.event_type precisa ser um EventType"
+            )
+        if not isinstance(self.representative_payload, dict):
+            raise InvalidEventError(
+                "AggregatedEvent.representative_payload precisa ser um dict"
+            )
+        if self.window_start.utcoffset() is None:
+            raise InvalidEventError(
+                "AggregatedEvent.window_start precisa ser timezone-aware"
+            )
+        if self.window_end.utcoffset() is None:
+            raise InvalidEventError(
+                "AggregatedEvent.window_end precisa ser timezone-aware"
+            )
+        if self.window_end < self.window_start:
+            raise InvalidEventError(
+                "AggregatedEvent.window_end não pode ser anterior a window_start"
+            )
+
+    @property
+    def window_duration_seconds(self) -> float:
+        """Duração da janela de agregação em segundos."""
+        delta = self.window_end - self.window_start
+        return delta.total_seconds()

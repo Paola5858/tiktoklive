@@ -112,6 +112,22 @@ O `target_architecture` da fase 1 propõe `src/application`, `src/infrastructure
 
 ---
 
+## DECIDIDO — PriorityQueueSet com 5 filas separadas em vez de heapq (fase 3)
+
+Em vez de uma única `asyncio.PriorityQueue` (que usa `heapq` e não preserva ordem FIFO de itens com mesma prioridade nem permite controle de tamanho por prioridade fácil), o Event Engine usa 5 `asyncio.Queue` distintas, com um scheduler explícito WRR (Weighted Round Robin) e uma express lane para SYSTEM events.
+Motivo: Evita STARVATION silencioso de prioridades P3/P4, permite limitar o buffer de cada nível de forma independente (ex: drop early de likes se a fila encher) e simplifica as métricas de profundidade.
+
+## DECIDIDO — Agregação de tempo-real e Deduplicação LRU (fase 3)
+
+Deduplicação: Usa `OrderedDict` com `maxsize` e verificação de TTL lazy na leitura, limpo periodicamente. Se o cache exceder `maxsize`, aplica LRU eviction.
+Agregação: `EventAggregator` colapsa floods num `AggregatedEvent` (`count >= 2`). Gifts, eventos SYSTEM e MANUAL não são agregáveis. Usa dicionários sem coleções não limitadas.
+
+## DECIDIDO — Dispatcher com Consumers isolados via Protocol (fase 3)
+
+O envio de eventos para consumidores (como o futuro Roblox Bridge) não ocorre via herança nem acoplamento forte. O `Dispatcher` aceita qualquer objeto que implemente o `EventConsumer` Protocol (duck typing). Falha em um consumidor não afeta outros nem trava a fila principal. O Roblox Bridge será apenas mais um consumer registrado na Fase 4.
+
+---
+
 ## decisões que não devem ser tomadas por suposição
 
 Não assumir que uma biblioteca possui um método, que localhost é acessível em produção, que um evento externo é idempotente, que gifts têm nomes estáveis, que o Roblox tolera qualquer frequência de request ou que logs com usernames são inofensivos. Cada item precisa de evidência reproduzível.

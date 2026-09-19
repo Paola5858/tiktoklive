@@ -6,7 +6,9 @@
 
 **Fase 2 — connector TikTok implementado com 38 testes passando**, incluindo normalização de comment/gift/follow, identidade, timestamps, buffer bounded, estados, backoff limitado e shutdown idempotente, inclusive quando solicitado imediatamente após o start. A suíte continua sem depender de uma LIVE ativa. Nenhum teste real contra uma LIVE foi executado nesta sessão.
 
-Tudo o resto abaixo (API local, fila completa, carga, falha externa e end-to-end) **ainda não foi implementado** — depende das fases seguintes. Este plano define o que precisa ser provado antes de considerar o sistema funcional. Resultados devem registrar ambiente, versão, dados usados e evidências — nenhum resultado deve ser inventado.
+**Fase 3 — Event Engine completo, 139 testes unitários e 2 testes de carga passando**. Implementado o pipeline `receive → deduplicate → aggregate → priority_queue (WRR) → dispatch`. Inclui `PriorityQueueSet` (5 filas independentes + express lane), `DeduplicationCache` (LRU + TTL), `EventAggregator` (janela temporal, exclusão de gifts/P0), e `EventProcessor` (pool de workers e backpressure). Foram adicionados testes de carga em `src/tests/load/` simulando floods de comentários (validação de aggregation) e contenção rigorosa com consumer lento (garantia de drop P4 e sobrevivência P1). Todos os testes passando em Python 3.10 local.
+
+Tudo o resto abaixo (API local, Roblox Bridge e integração ponta a ponta) **ainda não foi implementado** — depende das fases seguintes. Este plano define o que precisa ser provado antes de considerar o sistema funcional. Resultados devem registrar ambiente, versão, dados usados e evidências — nenhum resultado deve ser inventado.
 
 **Princípio:** cada camada testável isolada. Nada passa pra fase seguinte sem a fundação da fase anterior validada.
 

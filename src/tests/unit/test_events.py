@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -49,6 +49,22 @@ def test_event_with_naive_timestamp_raises():
         )
 
 
+def test_event_with_invalid_event_type_raises():
+    with pytest.raises(InvalidEventError):
+        Event(event_type="COMMENT", source="tiktok", user=_user())  # type: ignore[arg-type]
+
+
+def test_event_with_non_utc_offset_timestamp_is_accepted():
+    event = Event(
+        event_type=EventType.COMMENT,
+        source="tiktok",
+        user=_user(),
+        timestamp=datetime(2026, 1, 1, tzinfo=timezone(timedelta(hours=-3))),
+    )
+
+    assert event.timestamp.utcoffset() == timedelta(hours=-3)
+
+
 def test_event_user_requires_display_name():
     with pytest.raises(InvalidEventError):
         EventUser(display_name="   ")
@@ -91,3 +107,20 @@ def test_deduplication_key_differs_for_different_users():
     )
 
     assert a.deduplication_key() != b.deduplication_key()
+
+
+def test_deduplication_key_is_canonical_for_nested_payloads():
+    first = Event(
+        event_type=EventType.CUSTOM,
+        source="manual",
+        user=_user(),
+        payload={"nested": {"b": 2, "a": 1}},
+    )
+    second = Event(
+        event_type=EventType.CUSTOM,
+        source="manual",
+        user=_user(),
+        payload={"nested": {"a": 1, "b": 2}},
+    )
+
+    assert first.deduplication_key() == second.deduplication_key()

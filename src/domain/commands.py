@@ -22,6 +22,8 @@ class CommandType(str, Enum):
     SPAWN_AVATAR = "SPAWN_AVATAR"
     APPLY_EFFECT = "APPLY_EFFECT"
     REMOVE_ENTITY = "REMOVE_ENTITY"
+    SHOW_MESSAGE = "SHOW_MESSAGE"
+    SYSTEM_STATUS = "SYSTEM_STATUS"
     SYSTEM_SIGNAL = "SYSTEM_SIGNAL"
 
 
@@ -43,9 +45,13 @@ class Command:
     issued_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self) -> None:
+        if not isinstance(self.command_type, CommandType):
+            raise InvalidCommandError("Command.command_type precisa ser um CommandType")
+        if not isinstance(self.priority, Priority):
+            raise InvalidCommandError("Command.priority precisa ser uma Priority")
         if not isinstance(self.params, dict):
             raise InvalidCommandError(
                 f"Command.params precisa ser um dict, recebeu {type(self.params).__name__}"
             )
-        if self.issued_at.tzinfo is None:
+        if not isinstance(self.issued_at, datetime) or self.issued_at.utcoffset() is None:
             raise InvalidCommandError("Command.issued_at precisa ser timezone-aware")

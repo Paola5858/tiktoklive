@@ -25,7 +25,7 @@ Este schema é conceitual — os tipos exatos (int vs string, formato de timesta
   "priority": "P0 | P1 | P2 | P3 | P4",
   "dedupe_key": "tiktok:gift:external-id:gift-id:repeat-1",
   "payload": { "...": "específico do event_type" },
-  "status": "received | normalized | accepted | aggregated | dropped | processed | failed"
+  "status": "received | normalized | accepted | queued | processing | aggregated | dropped | processed | failed"
 }
 ```
 
@@ -81,7 +81,7 @@ Esse é o formato que efetivamente atravessa a LOCAL_API até o Roblox — já t
 {
   "schema_version": "1.0",
   "command_id": "01J...",
-  "command_type": "SPAWN_AVATAR | APPLY_EFFECT | REMOVE_ENTITY | SHOW_MESSAGE | SYSTEM_STATUS",
+  "command_type": "SPAWN_AVATAR | APPLY_EFFECT | REMOVE_ENTITY | SHOW_MESSAGE | SYSTEM_STATUS | SYSTEM_SIGNAL",
   "created_at": "ISO-8601",
   "priority": "P0..P4",
   "source_event_id": "01J...",

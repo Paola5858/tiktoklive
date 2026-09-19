@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 from src.domain.commands import Command, CommandType
@@ -20,6 +22,23 @@ def test_command_creation_with_minimum_fields_succeeds():
 def test_command_with_invalid_params_type_raises():
     with pytest.raises(InvalidCommandError):
         Command(command_type=CommandType.SPAWN_AVATAR, priority=Priority.P1, params="não é dict")  # type: ignore[arg-type]
+
+
+def test_command_with_invalid_enums_raises():
+    with pytest.raises(InvalidCommandError):
+        Command(command_type="SPAWN_AVATAR", priority=Priority.P1)  # type: ignore[arg-type]
+
+    with pytest.raises(InvalidCommandError):
+        Command(command_type=CommandType.SPAWN_AVATAR, priority=1)  # type: ignore[arg-type]
+
+
+def test_command_with_naive_timestamp_raises():
+    with pytest.raises(InvalidCommandError):
+        Command(
+            command_type=CommandType.SPAWN_AVATAR,
+            priority=Priority.P1,
+            issued_at=datetime(2026, 1, 1),
+        )
 
 
 def test_two_commands_get_different_ids():

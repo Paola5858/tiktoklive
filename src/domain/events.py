@@ -8,6 +8,7 @@ pra descrição completa do schema.
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -33,13 +34,15 @@ class EventType(str, Enum):
 class EventStatus(str, Enum):
     """Ciclo de vida de um evento, do recebimento ao resultado final."""
 
-    RECEIVED = "RECEIVED"
-    NORMALIZED = "NORMALIZED"
-    QUEUED = "QUEUED"
-    PROCESSING = "PROCESSING"
-    PROCESSED = "PROCESSED"
-    DROPPED = "DROPPED"
-    FAILED = "FAILED"
+    RECEIVED = "received"
+    NORMALIZED = "normalized"
+    ACCEPTED = "accepted"
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    PROCESSED = "processed"
+    AGGREGATED = "aggregated"
+    DROPPED = "dropped"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,13 +75,17 @@ class Event:
     status: EventStatus = EventStatus.RECEIVED
 
     def __post_init__(self) -> None:
+        if not isinstance(self.event_type, EventType):
+            raise InvalidEventError("Event.event_type precisa ser um EventType")
+        if not isinstance(self.user, EventUser):
+            raise InvalidEventError("Event.user precisa ser um EventUser")
         if not self.source or not self.source.strip():
             raise InvalidEventError("Event.source não pode ser vazio")
         if not isinstance(self.payload, dict):
             raise InvalidEventError(
                 f"Event.payload precisa ser um dict, recebeu {type(self.payload).__name__}"
             )
-        if self.timestamp.tzinfo is None:
+        if not isinstance(self.timestamp, datetime) or self.timestamp.utcoffset() is None:
             raise InvalidEventError("Event.timestamp precisa ser timezone-aware")
 
     def deduplication_key(self) -> str:
@@ -94,9 +101,20 @@ class Event:
         """
         user_key = self.user.external_id or self.user.display_name
         if self.event_type == EventType.GIFT:
-            content_key = str(self.payload.get("gift_name", ""))
+            content_key = self.payload.get("gift_id", self.payload.get("gift_name", ""))
         elif self.event_type == EventType.COMMENT:
             content_key = str(self.payload.get("text", ""))
         else:
-            content_key = repr(sorted(self.payload.items()))
-        return f"{self.source}:{self.event_type.value}:{user_key}:{content_key}"
+            content_key = self.payload
+        return json.dumps(
+            {
+                "source": self.source,
+                "event_type": self.event_type.value,
+                "user": user_key,
+                "content": content_key,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )

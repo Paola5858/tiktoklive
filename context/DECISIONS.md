@@ -82,6 +82,28 @@ A aplicação deverá expor: estado de conexão, contadores de eventos, profundi
 
 ---
 
+## DECIDIDO — dataclasses da stdlib no domínio, não Pydantic (fase 1)
+
+`Event`, `EventUser` e `Command` são `@dataclass(frozen=True, slots=True)` com validação manual em `__post_init__`, sem Pydantic. Motivo: `domain_first` exige que o domínio seja testável sem nenhum framework de infraestrutura, e a stdlib já resolve o problema de validação nesta fase sem dependência nova. Se a API local (FastAPI) precisar de Pydantic depois, o mapping fica na borda (`api/`), não dentro do domínio.
+
+## DECIDIDO — Python 3.11+ como baseline (fase 1)
+
+Motivo: uso de `dataclass(slots=True)` (3.10+) e `X | None` em anotações de tipo. Ambiente de desenvolvimento validado nesta fase: Python 3.12.3. Ainda não verificado na máquina real da Paola — checar antes de assumir compatibilidade total.
+
+## DECIDIDO — sem `[build-system]` no pyproject.toml por enquanto (fase 1)
+
+O projeto ainda não precisa ser instalável como pacote (`pip install -e .`) porque não há nenhum consumidor externo do código ainda. `pytest` roda direto via `pythonpath = ["."]`. Empacotamento formal (hatchling ou equivalente) fica pra fase 8 (Packaging), quando existir um motivo real (launcher, distribuição).
+
+## EM ABERTO — application/, infrastructure/ e api/ da fundação
+
+O `target_architecture` da fase 1 propõe `src/application`, `src/infrastructure` e `src/api`, mas nenhum dos três foi criado agora: não faz sentido ter módulos de orquestração, integração ou API sem nada real pra orquestrar, integrar ou expor ainda (regra da fase 1: "não criar arquivos vazios apenas para deixar a árvore bonita"). Eles entram na fase 2 em diante, quando a ingestão do TikTok (fase 2) ou a API local (fase 3) começarem de verdade.
+
+## EM ABERTO — regra de dedupe por evento não-GIFT/COMMENT
+
+`Event.deduplication_key()` cai pro payload inteiro serializado pra FOLLOW/SHARE/LIKE/SYSTEM/MANUAL/CUSTOM — comportamento conservador (quase nunca considera duplicata) até existirem dados reais de live pra calibrar uma regra melhor tipo por tipo.
+
+---
+
 ## decisões que não devem ser tomadas por suposição
 
 Não assumir que uma biblioteca possui um método, que localhost é acessível em produção, que um evento externo é idempotente, que gifts têm nomes estáveis, que o Roblox tolera qualquer frequência de request ou que logs com usernames são inofensivos. Cada item precisa de evidência reproduzível.

@@ -4,7 +4,9 @@
 
 **Fase 1 (fundação) — 26 testes unitários implementados e passando**, cobrindo só domínio puro, sem rede e sem Roblox: `src/tests/unit/test_events.py`, `test_commands.py`, `test_priorities.py`, `test_config.py`. Executados em `Python 3.12.3`, com `26 passed` (comando: `pytest` na raiz do repo). Cobre: criação de `Event`/`Command` válido e inválido, geração de identidade única, invariantes (`source` vazio, `payload` não-dict, timestamp naive, `display_name` vazio), rejeição de enums e tipos desconhecidos, timestamps com timezone, chave de deduplication estável e canônica, resolução de prioridade padrão por tipo e ordenação P0→P4, validação de `ENVIRONMENT`/`LOG_LEVEL`.
 
-Tudo o resto abaixo (contrato, integração, carga, falha, end-to-end) **ainda não foi implementado** — depende das fases 2 em diante, quando ingestão, fila e API local existirem de verdade. Este plano define o que precisa ser provado antes de considerar o sistema funcional. Resultados devem registrar ambiente, versão, dados usados e evidências — nenhum resultado deve ser inventado.
+**Fase 2 — connector TikTok implementado com 38 testes passando**, incluindo normalização de comment/gift/follow, identidade, timestamps, buffer bounded, estados, backoff limitado e shutdown idempotente, inclusive quando solicitado imediatamente após o start. A suíte continua sem depender de uma LIVE ativa. Nenhum teste real contra uma LIVE foi executado nesta sessão.
+
+Tudo o resto abaixo (API local, fila completa, carga, falha externa e end-to-end) **ainda não foi implementado** — depende das fases seguintes. Este plano define o que precisa ser provado antes de considerar o sistema funcional. Resultados devem registrar ambiente, versão, dados usados e evidências — nenhum resultado deve ser inventado.
 
 **Princípio:** cada camada testável isolada. Nada passa pra fase seguinte sem a fundação da fase anterior validada.
 

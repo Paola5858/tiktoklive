@@ -6,9 +6,17 @@ Decisões marcadas como **EM ABERTO** ainda não foram implementadas nem validad
 
 ---
 
-## EM ABERTO — biblioteca de conexão com TikTok Live
+## RESOLVIDA — biblioteca de conexão com TikTok Live
 
-Precisa ser escolhida e testada antes de qualquer código de ingestão. Critério: manutenção ativa, suporte a reconexão, documentação de quais eventos ela emite. Não assumir formato de evento sem ler o código-fonte da lib escolhida. API e estabilidade não verificadas — evidência necessária: documentação, licença, protótipo.
+Foi escolhida e verificada antes do código de ingestão. A biblioteca não é tratada como decisão permanente: se quebrar ou deixar de atender, a fronteira `TikTokSource` deve permitir substituição sem contaminar o domínio.
+
+## DECIDIDO — TikTokLive 7.0.1 como connector local da v1
+
+A fase 2 usa `TikTokLive==7.0.1`, verificado no PyPI, no repositório upstream e por inspeção dos exports instalados. A versão expõe `TikTokLiveClient`, `start()`, `connect()`, `disconnect()`, `add_listener()` e os eventos necessários para esta fase: `CommentEvent`, `GiftEvent`, `FollowEvent`, `ConnectEvent`, `DisconnectEvent` e `LiveEndEvent`.
+
+A biblioteca é um projeto de engenharia reversa, declara licença Modified AGPL-3.0 e alerta que não é uma API de produção. Isso é aceito para o uso local e open source previsto nesta versão. A dependência está pinada para evitar que uma atualização mude silenciosamente os campos usados pelo normalizer.
+
+O projeto usa `tiktoklive-engine` como nome de distribuição no `pyproject.toml`, porque o nome normalizado `tiktoklive` colide com a distribuição externa `TikTokLive` no resolvedor do Python. Os imports internos continuam em `src.*`.
 
 ## EM ABERTO — FastAPI vs Flask pra API local
 

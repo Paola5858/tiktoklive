@@ -2,7 +2,7 @@
 
 ## estado atual
 
-O repositório ainda não possui código. A arquitetura abaixo é uma proposta de fundação, não uma descrição de componentes existentes.
+A fundação de domínio e o primeiro connector real de TikTok já existem. O connector usa `TikTokLive 7.0.1`, mas a fila do Event Engine, a API local, o bridge Roblox e a observabilidade operacional completa ainda não foram implementados.
 
 ---
 
@@ -84,7 +84,7 @@ Desconexões devem entrar em estados explícitos: `connected`, `disconnected`, `
 ## contratos entre camadas
 
 ### INGESTION → NORMALIZER
-Payload bruto da lib de TikTok Live, sem alteração. O normalizer é o único lugar que conhece o formato específico da lib escolhida.
+O `TikTokLiveConnector` registra listeners da biblioteca externa para `CommentEvent`, `GiftEvent`, `FollowEvent`, `ConnectEvent`, `DisconnectEvent` e `LiveEndEvent`. O normalizer é o único lugar que conhece os campos específicos da lib escolhida. Eventos entram em um buffer bounded e não são guardados em uma lista infinita.
 
 ### NORMALIZER → EVENT_ENGINE
 Evento no schema interno padronizado (ver `EVENT_SCHEMA.md`). A partir daqui, nada mais no pipeline sabe que a origem foi TikTok.
@@ -143,8 +143,10 @@ src/
     commands.py          # comandos abstratos para consumidores
     policies.py          # prioridade, dedupe, cooldown, overflow
   ingestion/
-    base.py              # protocolo de source adapter
-    tiktok.py            # adaptador TikTok, após validação da biblioteca
+    base.py              # estados e métricas da source
+    buffer.py            # fronteira bounded entre callback e consumidor
+    normalizer.py        # objetos TikTokLive → Event
+    tiktok.py            # lifecycle, listeners, reconnect e shutdown
   engine/
     normalizer.py
     processor.py

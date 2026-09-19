@@ -72,6 +72,7 @@ class Event:
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     source_event_id: str | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     status: EventStatus = EventStatus.RECEIVED
 
     def __post_init__(self) -> None:
@@ -87,6 +88,8 @@ class Event:
             )
         if not isinstance(self.timestamp, datetime) or self.timestamp.utcoffset() is None:
             raise InvalidEventError("Event.timestamp precisa ser timezone-aware")
+        if not isinstance(self.received_at, datetime) or self.received_at.utcoffset() is None:
+            raise InvalidEventError("Event.received_at precisa ser timezone-aware")
 
     def deduplication_key(self) -> str:
         """Chave usada pra identificar eventos duplicados.

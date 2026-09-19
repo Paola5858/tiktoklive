@@ -2,9 +2,11 @@
 
 event engine que transforma eventos de uma live do TikTok em eventos interativos no Roblox (spawn de avatar, efeitos, etc), com fila, prioridade e observabilidade — sem o Roblox nunca precisar entender a estrutura interna do TikTok.
 
-## status atual: fase 1 — fundação
+## status atual: fase 2 — connector TikTok
 
-só existe o domínio (`src/domain/`) e a configuração base (`src/config.py`, `src/errors.py`, `src/logging.py`). **ainda não tem**: conector de TikTok, bridge de Roblox, integração com OBS, fila, API local, MQTT. isso é proposital — ver `context/PROJECT_SPEC.md` e as fases registradas em `context/DECISIONS.md`.
+o domínio e a configuração base continuam isolados, e agora existe um connector real usando `TikTokLive==7.0.1`. Ele normaliza comentários, gifts e follows para `Event`, mantém lifecycle observável, reconecta com backoff limitado e usa buffer bounded. **ainda não tem**: bridge de Roblox, integração com OBS, Event Engine completo, API local e MQTT.
+
+A biblioteca é um projeto de engenharia reversa e declara Modified AGPL-3.0. Nesta fase ela é usada localmente e a versão está pinada para que mudanças upstream não alterem silenciosamente o contrato.
 
 ## documentação de contexto
 
@@ -21,7 +23,7 @@ requer python 3.11 ou superior.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install pytest
+pip install -e '.[dev]'
 cp .env.example .env
 ```
 
@@ -33,7 +35,17 @@ cp .env.example .env
 pytest
 ```
 
-todos os testes atuais rodam sem internet e sem Roblox: são testes de domínio puro (criação de evento e de comando, validação, prioridade, dedupe, configuração).
+todos os testes atuais rodam sem internet e sem Roblox: são testes de domínio, normalização e lifecycle com client externo simulado.
+
+## observando uma live
+
+Com o ambiente virtual ativo, rode:
+
+```bash
+python -m src.tiktok_probe @username_da_live
+```
+
+O probe registra apenas o tipo, o identificador externo quando disponível e o nome exibido. Ctrl+C executa o shutdown do connector. A biblioteca precisa conseguir resolver o perfil e a LIVE precisa estar ativa; uma LIVE real ainda precisa ser validada manualmente.
 
 ## estrutura
 
@@ -47,6 +59,12 @@ src/
     commands.py       # Command — o que sai do event engine rumo ao Roblox
     priorities.py     # modelo de prioridade (P0-P4)
     errors.py         # erros de domínio
+  ingestion/
+    base.py           # estados e métricas do connector
+    buffer.py         # buffer bounded
+    normalizer.py     # TikTokLive → Event
+    tiktok.py         # conexão, listeners, backoff e shutdown
+  tiktok_probe.py     # entrypoint local da fase 2
   tests/unit/         # testes de domínio, sem infraestrutura
 context/               # memória persistente do projeto (specs, decisões, testes)
 ```

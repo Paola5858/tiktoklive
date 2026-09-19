@@ -45,7 +45,7 @@ Este schema é conceitual — os tipos exatos (int vs string, formato de timesta
 | `payload` | objeto | validado por tipo e com limite de tamanho |
 | `status` | enum | progressão do ciclo de vida do evento |
 
-Timestamps devem ser tratados com timezone explícito. Payloads desconhecidos ou grandes devem ser rejeitados ou reduzidos de forma observável. Falha de normalização nunca deve produzir um comando Roblox parcial.
+Timestamps devem ser tratados com timezone explícito. No modelo Python atual, `Event.timestamp` representa `occurred_at` e `Event.received_at` representa o instante de ingestão. O connector preserva `CommonMessageData.create_time` quando disponível e usa o horário de recebimento somente como fallback explícito. Payloads desconhecidos ou grandes devem ser rejeitados ou reduzidos de forma observável. Falha de normalização nunca deve produzir um comando Roblox parcial.
 
 ### payload por tipo (conceitual)
 

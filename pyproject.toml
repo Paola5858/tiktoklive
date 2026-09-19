@@ -1,13 +1,16 @@
 [project]
-name = "tiktoklive"
+name = "tiktoklive-engine"
 version = "0.1.0"
 description = "Event engine que transforma eventos de uma live do TikTok em eventos interativos no Roblox."
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "TikTokLive==7.0.1",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.24",
 ]
 
 [tool.pytest.ini_options]

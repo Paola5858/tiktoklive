@@ -131,3 +131,19 @@ O envio de eventos para consumidores (como o futuro Roblox Bridge) não ocorre v
 ## decisões que não devem ser tomadas por suposição
 
 Não assumir que uma biblioteca possui um método, que localhost é acessível em produção, que um evento externo é idempotente, que gifts têm nomes estáveis, que o Roblox tolera qualquer frequência de request ou que logs com usernames são inofensivos. Cada item precisa de evidência reproduzível.
+
+## DECIDIDO — runtime Roblox server-side e identidade explícita (fase 5)
+
+O runtime de gameplay vive em `roblox/src` e recebe `Command` já decodificado. Ele não interpreta TikTok e não converte nome exibido da live em username Roblox. A resolução aceita apenas `parameters.avatar_user_id` ou um mapping configurado; sem identidade confiável, usa fallback local.
+
+## DECIDIDO — APIs assíncronas atuais de avatar
+
+Foram verificadas no Creator Hub as APIs `Players:GetHumanoidDescriptionFromUserIdAsync` e `Players:CreateHumanoidModelFromDescriptionAsync`. Os nomes sem `Async` aparecem como deprecated na documentação atual e não são usados. `Instance:SetAttribute/GetAttribute/Destroy`, `Model:PivotTo` e `Debris:AddItem` também foram conferidos. O cleanup principal permanece explícito no `CleanupManager`, porque Debris sozinho não fornece a contagem, prioridade e idempotência exigidas.
+
+## DECIDIDO — fallback e limites bounded do avatar runtime
+
+O fallback é um Model local com Part ancorada e Humanoid, sem rede ou asset ID. O runtime inicia com máximo de 100 avatares ativos, TTL de 60 segundos para comentários, 300 segundos para gifts, 100 spawns pendentes e 10 spawns por segundo. Esses valores são defaults experimentais, não capacidade medida do Roblox. Quando o limite ativo é atingido, a política remove o registro mais antigo não protegido; se só houver registros protegidos, rejeita o novo spawn.
+
+## DECIDIDO — efeitos allowlisted sem conteúdo arbitrário
+
+Os efeitos iniciais são `HEARTS`, `GOLD_AURA` e `BLUE_GLOW`, implementados com `Highlight`. Asset IDs, scripts externos e texto do TikTok não controlam código, instâncias ou assets. Todo efeito possui lifetime e é destruído pelo seu serviço ou no shutdown.

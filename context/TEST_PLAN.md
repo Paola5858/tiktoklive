@@ -8,7 +8,11 @@
 
 **Fase 3 — Event Engine completo, 139 testes unitários e 2 testes de carga passando**. Implementado o pipeline `receive → deduplicate → aggregate → priority_queue (WRR) → dispatch`. Inclui `PriorityQueueSet` (5 filas independentes + express lane), `DeduplicationCache` (LRU + TTL), `EventAggregator` (janela temporal, exclusão de gifts/P0), e `EventProcessor` (pool de workers e backpressure). Foram adicionados testes de carga em `src/tests/load/` simulando floods de comentários (validação de aggregation) e contenção rigorosa com consumer lento (garantia de drop P4 e sobrevivência P1). Todos os testes passando em Python 3.10 local.
 
-Tudo o resto abaixo (API local, Roblox Bridge e integração ponta a ponta) **ainda não foi implementado** — depende das fases seguintes. Este plano define o que precisa ser provado antes de considerar o sistema funcional. Resultados devem registrar ambiente, versão, dados usados e evidências — nenhum resultado deve ser inventado.
+**Fase 5 — Roblox Avatar Runtime implementado em Luau**, com router, handlers, identidade explícita, cache TTL/LRU, lookup in-flight, fallback, limite de instâncias, limite de spawn, efeitos allowlisted e cleanup centralizado. Como não há Roblox Studio nem runtime Luau neste ambiente, a validação executável desta fase é o checklist em `roblox/tests/ROBLOX_RUNTIME_TESTS.md`; criação efetiva de avatar, transporte HTTP e impacto de frame ainda não foram medidos.
+
+O Roblox Bridge/API local da fase intermediária não aparece no histórico publicado revisado. O runtime foi deixado com uma fronteira explícita (`LiveRuntime:handle(decodedCommand)`) para não inventar um transporte nem acoplar gameplay a localhost.
+
+Tudo o resto abaixo (integração ponta a ponta, Studio, jogo publicado e performance real) **ainda não foi validado**. Este plano define o que precisa ser provado antes de considerar o sistema funcional. Resultados devem registrar ambiente, versão, dados usados e evidências — nenhum resultado deve ser inventado.
 
 **Princípio:** cada camada testável isolada. Nada passa pra fase seguinte sem a fundação da fase anterior validada.
 

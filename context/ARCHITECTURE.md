@@ -25,7 +25,7 @@ LOCAL_API (expõe fila processada pra quem consome)
    ↓
 ROBLOX_BRIDGE (Luau consumindo a API local via HttpService)
    ↓
-GAME_ENGINE (spawn, física, efeito, duração, cleanup)
+GAME_ENGINE (router, avatar, efeito, duração, cleanup)
    ↓
 OBS_INTEGRATION (reage ao estado da live)
 
@@ -93,7 +93,7 @@ Evento no schema interno padronizado (ver `EVENT_SCHEMA.md`). A partir daqui, na
 Mesmo schema interno, já com `priority` resolvida e `status` inicial definido. Eventos descartados aqui (dedupe, cooldown) não entram na fila — mas ficam registrados no log JSONL pra debug.
 
 ### QUEUE → LOCAL_API
-A API local expõe um endpoint de leitura (pull, não push) pro Roblox. Contrato mínimo: `GET /events?since=<cursor>&limit=<n>` retornando lista de eventos prontos pra execução, mais um `GET /health` separado (health check não expõe nem aceita payload de evento).
+A API local expõe um endpoint de leitura (pull, não push) pro Roblox. Contrato mínimo: `GET /events?since=<cursor>&limit=<n>` retornando lista de eventos prontos pra execução, mais um `GET /health` separado (health check não expõe nem aceita payload de evento). A implementação do endpoint/bridge não está presente no commit que antecede esta fase; o runtime recebe o comando já decodificado.
 
 ### LOCAL_API → ROBLOX_BRIDGE
 JSON puro via HTTP. O bridge em Luau faz polling nesse endpoint respeitando o limite de requests do HttpService (ver risco #2 em `PROJECT_SPEC.md`).
@@ -162,6 +162,15 @@ src/
     health.py
   security/
     validation.py
+roblox/
+  ROBLOX_RUNTIME.md       # APIs verificadas, limites e lifecycle
+  src/
+    LiveRuntime.lua        # composição, idempotência e shutdown
+    GameEventRouter.lua    # allowlist e roteamento
+    AvatarService.lua      # lookup, cache, fallback e spawn
+    AvatarCache.lua        # TTL + LRU bounded
+    CleanupManager.lua     # active instances e expiração
+    EffectService.lua      # efeitos allowlisted e cleanup
   tests/
     unit/
     integration/

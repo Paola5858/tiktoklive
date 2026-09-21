@@ -194,3 +194,11 @@ O normalizer verificado fornece `gift_id`, `gift_name`, `repeat_count`, `combo_c
 ## DECIDIDO — agregação opt-in, combos adiados
 
 Agregação exige configuração explícita de janela e threshold e possui máximo de estados. Gifts não são agregados por padrão. Combos não foram implementados porque ainda não há uma mecânica real que justifique estado adicional bounded, reset, timeout e dedupe.
+
+## DECIDIDO — logs de auditoria em background (fase 7)
+
+O `EventAuditLogger` envia rastros para os arquivos JSONL por meio de um `asyncio.Queue` e uma worker task dedicada (limite rígido na fila). Isso foi escolhido para impedir que I/O (disco lento) acabe travando a performance do loop de eventos principal (`asyncio`). Se a fila encher, rastros podem ser descartados, mas o fluxo não trava.
+
+## DECIDIDO — watchdog de ausência de progresso, não só processo vivo (fase 7)
+
+A saúde do sistema é avaliada pelo tempo desde o último avanço útil (`mark_active` e `record_success`), ao invés de checar se o processo está rodando ou se a porta 8787 responde. Isso ataca diretamente falhas silenciosas de coroutines travadas (ex. starvation de worker).

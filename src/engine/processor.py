@@ -49,6 +49,8 @@ from src.engine.errors import EngineShutdownError, HandlerError, QueueFullError
 from src.engine.metrics import EngineMetrics, now_ms
 from src.engine.queue import PriorityQueueSet
 from src.logging import get_logger
+from src.observability.health import Watchdog, ComponentHealth
+from src.observability.audit import EventAuditLogger
 
 LOGGER = get_logger(__name__)
 
@@ -57,33 +59,20 @@ _AGGREGATOR_FLUSH_INTERVAL = 0.25
 
 
 class EventProcessor:
-    """Orquestrador do pipeline do Event Engine.
-
-    Usage:
-        config = EngineConfig()
-        metrics = EngineMetrics()
-        dispatcher = Dispatcher(metrics)
-        dispatcher.register(my_consumer)
-
-        processor = EventProcessor(config, metrics, dispatcher)
-        await processor.start()
-
-        # Alimentar eventos:
-        await processor.receive(event)
-
-        # Encerrar:
-        await processor.stop()
-    """
+    """Orquestrador do pipeline do Event Engine."""
 
     def __init__(
         self,
         config: EngineConfig,
         metrics: EngineMetrics,
         dispatcher: Dispatcher,
+        watchdog: Watchdog | None = None,
+        audit_logger: EventAuditLogger | None = None,
     ) -> None:
         self._config = config
         self._metrics = metrics
         self._dispatcher = dispatcher
+        self._audit_logger = audit_logger
 
         self._queue = PriorityQueueSet(config, metrics)
         self._dedup = DeduplicationCache(
@@ -98,6 +87,11 @@ class EventProcessor:
         self._flush_task: Task[None] | None = None
         self._dedup_evict_task: Task[None] | None = None
         self._started = False
+
+        # Registra no watchdog se fornecido
+        self._health: ComponentHealth | None = None
+        if watchdog:
+            self._health = watchdog.register("EventProcessor")
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -308,16 +302,16 @@ class EventProcessor:
     # ------------------------------------------------------------------
 
     async def _worker_loop(self, worker_id: int) -> None:
-        """Loop principal de um worker.
-
-        Consome eventos da fila, processa e despacha.
-        Encerra quando a fila sinaliza StopAsyncIteration (fechada e vazia).
-        """
+        """Loop principal de worker."""
         self._metrics.record_worker_started()
         LOGGER.debug("Worker %d iniciado", worker_id)
 
         try:
             while True:
+                # Ping watchdog to show we are not stuck
+                if self._health:
+                    self._health.mark_active()
+
                 try:
                     event = await self._queue.get_next()
                 except StopAsyncIteration:
@@ -336,24 +330,42 @@ class EventProcessor:
                 worker_id,
                 type(exc).__name__,
             )
+            if self._health:
+                self._health.record_failure(
+                    f"Worker {worker_id} crashed: {exc}", is_critical=True
+                )
         finally:
             self._metrics.record_worker_stopped()
             LOGGER.debug("Worker %d encerrado", worker_id)
 
     async def _process_event(self, event: Event, queue_dequeue_time: float) -> None:
-        """Processa um único evento do começo ao fim.
-
-        Exception de qualquer handler é capturada aqui — não propaga
-        para o worker loop.
-        """
+        """Processa um único evento do começo ao fim."""
         self._metrics.record_processing_start()
         start_time = now_ms()
 
         try:
             await self._dispatcher.dispatch(event)
             self._metrics.record_processing_end(failed=False)
-            self._metrics.latency_processing.record(now_ms() - start_time)
+            latency = now_ms() - start_time
+            self._metrics.latency_processing.record(latency)
             self._metrics.latency_queue_wait.record(start_time - queue_dequeue_time)
+            self._metrics.latency_end_to_end.record(
+                now_ms() - event.timestamp.timestamp() * 1000
+            )
+
+            if self._audit_logger:
+                self._audit_logger.log_event(
+                    {
+                        "event_id": event.event_id,
+                        "event_type": event.event_type.value,
+                        "status": "processed",
+                        "latency_ms": round(latency, 2),
+                        "queue_wait_ms": round(start_time - queue_dequeue_time, 2),
+                    }
+                )
+
+            if self._health:
+                self._health.record_success()
 
         except Exception as exc:
             self._metrics.record_processing_end(failed=True)
@@ -363,15 +375,24 @@ class EventProcessor:
                 event.event_type.value,
                 type(exc).__name__,
             )
+
+            if self._audit_logger:
+                self._audit_logger.log_event(
+                    {
+                        "event_id": event.event_id,
+                        "event_type": event.event_type.value,
+                        "status": "failed",
+                        "error": str(exc),
+                    }
+                )
+
+            if self._health:
+                self._health.record_failure(f"Process error: {exc}", is_critical=False)
+
             self._on_failure(event, exc)
 
     def _on_failure(self, event: Event, exc: Exception) -> None:
-        """Hook para tratamento de falhas de processamento.
-
-        Nesta fase: apenas registra o erro.
-        Fase futura: dead-letter queue, retry policy, alertas.
-        """
-        # Placeholder para retry/dead-letter (ver DECISIONS.md)
+        """Hook para tratamento de falhas de processamento."""
         pass
 
     # ------------------------------------------------------------------

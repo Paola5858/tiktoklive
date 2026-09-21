@@ -37,6 +37,7 @@ from src.domain.events import AggregatedEvent, Event
 from src.domain.priorities import DEFAULT_PRIORITY_BY_EVENT_TYPE, Priority
 from src.interaction.models import GameEvent
 from src.logging import get_logger
+from src.observability.health import Watchdog, ComponentHealth
 
 LOGGER = get_logger(__name__)
 
@@ -86,19 +87,7 @@ class RobloxBridgeConfig:
 
 @dataclass(frozen=True, slots=True)
 class GameEventEnvelope:
-    """Envelope de transporte que atravessa a Local API até o Roblox.
-
-    Contrato mínimo por `api_contract`/`event_envelope` na spec da fase 4:
-    event_id, event_type, timestamp, priority, payload, schema_version —
-    mais `sequence_number` (nosso modelo de cursor, ver
-    `context/ROBLOX_BRIDGE.md`) e `source`/`user` opcionais.
-
-    Isto NÃO é o `Command`/`CommandType` de `src/domain/commands.py`: aquele
-    é o contrato de comando de jogo já mapeado (fase 5, Gift Mapping
-    Engine). Este envelope é o transporte genérico de qualquer evento
-    processado — o `event_type` aqui ainda é o `EventType`/`"AGGREGATED"`
-    do domínio, não um `CommandType` de gameplay.
-    """
+    """Envelope de transporte que atravessa a Local API até o Roblox."""
 
     sequence_number: int
     event_id: str
@@ -131,11 +120,7 @@ def _iso(dt: datetime) -> str:
 
 
 def to_envelope(event: Event | AggregatedEvent, sequence_number: int) -> GameEventEnvelope:
-    """Traduz um `Event`/`AggregatedEvent` do domínio pro envelope de transporte.
-
-    Esta é a única função que sabe ler os dois tipos de evento que o
-    Dispatcher pode entregar — o resto do bridge só lida com `GameEventEnvelope`.
-    """
+    """Traduz um `Event`/`AggregatedEvent` do domínio pro envelope de transporte."""
     if isinstance(event, AggregatedEvent):
         return GameEventEnvelope(
             sequence_number=sequence_number,
@@ -154,9 +139,6 @@ def to_envelope(event: Event | AggregatedEvent, sequence_number: int) -> GameEve
             user=None,
         )
 
-    # Event comum: prioridade não é armazenada no próprio Event (ver
-    # EventProcessor._resolve_priority) — resolvemos o baseline padrão
-    # aqui pra não deixar o campo ausente no envelope.
     priority = getattr(event, "priority", None)
     if priority is None:
         priority = DEFAULT_PRIORITY_BY_EVENT_TYPE.get(event.event_type, Priority.P4)
@@ -177,12 +159,7 @@ def to_envelope(event: Event | AggregatedEvent, sequence_number: int) -> GameEve
 
 
 def game_event_to_envelope(event: GameEvent, sequence_number: int) -> GameEventEnvelope:
-    """Traduz um GameEvent produzido pelo Interaction Rules Engine.
-
-    O payload mantém o comando completo porque o consumidor Roblox precisa
-    encaminhá-lo ao runtime, mas o envelope continua usando o contrato de
-    transporte versionado da fase 4.
-    """
+    """Traduz um GameEvent produzido pelo Interaction Rules Engine."""
     return GameEventEnvelope(
         sequence_number=sequence_number,
         event_id=event.event_id,
@@ -196,25 +173,11 @@ def game_event_to_envelope(event: GameEvent, sequence_number: int) -> GameEventE
 
 
 class RobloxBridge:
-    """Consumer do Event Engine que alimenta o buffer de entrega do Roblox.
+    """Consumer do Event Engine que alimenta o buffer de entrega do Roblox."""
 
-    Implementa o protocolo `EventConsumer` de `src/engine/dispatcher.py`
-    (duck typing — não precisa herdar de nada): `name`, `can_handle`, `handle`.
-
-    Usage:
-        bridge = RobloxBridge(RobloxBridgeConfig.default())
-        dispatcher.register(bridge)
-        # ... engine roda, eventos chegam via handle() ...
-        envelopes, cursor = bridge.get_events_since(since=0, limit=25)
-        bridge.ack(up_to_sequence=cursor)
-
-    Thread-safety: um `threading.Lock` protege o buffer porque a Local API
-    (uvicorn) e o Event Engine (asyncio) podem, dependendo de como forem
-    compostos futuramente, não compartilhar a mesma thread. As operações
-    são O(1)/O(limit) e o lock nunca é mantido durante I/O.
-    """
-
-    def __init__(self, config: RobloxBridgeConfig | None = None) -> None:
+    def __init__(
+        self, config: RobloxBridgeConfig | None = None, watchdog: Watchdog | None = None
+    ) -> None:
         self._config = config or RobloxBridgeConfig.default()
         self._buffer: deque[GameEventEnvelope] = deque(maxlen=self._config.buffer_capacity)
         self._sequence = itertools.count(start=1)
@@ -228,6 +191,10 @@ class RobloxBridge:
         self._last_acknowledged_sequence = 0
         self._lowest_sequence_ever = 0
         self._highest_sequence_ever = 0
+
+        self._health: ComponentHealth | None = None
+        if watchdog:
+            self._health = watchdog.register("RobloxBridgeConsumer")
 
     # ------------------------------------------------------------------
     # EventConsumer protocol (src/engine/dispatcher.py)
@@ -254,6 +221,8 @@ class RobloxBridge:
         self._highest_sequence_ever = envelope.sequence_number
         if self._lowest_sequence_ever == 0:
             self._lowest_sequence_ever = envelope.sequence_number
+        if self._health:
+            self._health.mark_active()
 
     async def handle(self, event: Event | AggregatedEvent) -> None:
         with self._lock:
@@ -296,6 +265,8 @@ class RobloxBridge:
 
         with self._lock:
             self._last_poll_at = datetime.now(timezone.utc)
+            if self._health:
+                self._health.mark_active()
             oldest_available = self._buffer[0].sequence_number if self._buffer else since
 
             gap_detected = bool(self._buffer) and since > 0 and since < oldest_available - 1
@@ -306,15 +277,10 @@ class RobloxBridge:
         return result, cursor, gap_detected
 
     def ack(self, up_to_sequence: int) -> int:
-        """Registra até onde o Roblox confirma ter processado.
-
-        Semântica (ver `context/ROBLOX_BRIDGE.md`): isto é só observabilidade
-        nesta fase — não apaga nada do buffer, que já é bounded por
-        capacidade. Um `ack` não é "obrigatório" pro polling funcionar; ele
-        existe pra permitir diagnosticar quanto o Roblox está atrasado em
-        relação ao que o engine produziu.
-        """
+        """Registra até onde o Roblox confirma ter processado."""
         with self._lock:
+            if self._health:
+                self._health.record_success()
             if up_to_sequence > self._last_acknowledged_sequence:
                 self._last_acknowledged_sequence = up_to_sequence
             return self._last_acknowledged_sequence

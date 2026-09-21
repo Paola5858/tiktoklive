@@ -32,6 +32,7 @@ from src.ingestion.normalizer import (
     normalize_follow,
     normalize_gift,
 )
+from src.observability.health import Watchdog, ComponentHealth
 
 LOGGER = get_logger(__name__)
 ClientFactory = Callable[[str], Any]
@@ -48,6 +49,7 @@ class TikTokLiveConnector:
         max_reconnect_attempts: int = 5,
         backoff_delays: tuple[float, ...] = (2.0, 4.0, 8.0, 16.0, 30.0),
         client_factory: ClientFactory | None = None,
+        watchdog: Watchdog | None = None,
     ) -> None:
         unique_id = unique_id.strip().lstrip("@")
         if not unique_id:
@@ -69,6 +71,10 @@ class TikTokLiveConnector:
         self._live_ended = False
         self._buffer = BoundedEventBuffer(max_buffer_size)
         self._client_factory = client_factory or self._default_client_factory
+
+        self._health: ComponentHealth | None = None
+        if watchdog:
+            self._health = watchdog.register("TikTokConnector")
 
     @staticmethod
     def _default_client_factory(unique_id: str) -> TikTokLiveClient:
@@ -202,23 +208,38 @@ class TikTokLiveConnector:
         self._state = ConnectionState.CONNECTED
         self.metrics.successful_connections += 1
         self.metrics.last_successful_connection = datetime.now(timezone.utc)
+        if self._health:
+            self._health.record_success()
+            self._health.state = ComponentState.READY
 
     async def _on_disconnect(self, _event: DisconnectEvent) -> None:
         self.metrics.disconnects += 1
+        if self._health:
+            self._health.record_failure("Disconnected from TikTok", is_critical=False)
+            self._health.state = ComponentState.DISCONNECTED
 
     async def _on_live_end(self, _event: LiveEndEvent) -> None:
         self._live_ended = True
         self._stop_event.set()
         if self._client is not None:
             self._client.disconnect(close_client=True)
+        if self._health:
+            self._health.state = ComponentState.STOPPED
+            self._health.record_success()
 
     async def _on_comment(self, raw_event: CommentEvent) -> None:
+        if self._health:
+            self._health.mark_active()
         await self._normalize_and_buffer(normalize_comment, raw_event)
 
     async def _on_gift(self, raw_event: GiftEvent) -> None:
+        if self._health:
+            self._health.mark_active()
         await self._normalize_and_buffer(normalize_gift, raw_event)
 
     async def _on_follow(self, raw_event: FollowEvent) -> None:
+        if self._health:
+            self._health.mark_active()
         await self._normalize_and_buffer(normalize_follow, raw_event)
 
     async def _normalize_and_buffer(self, normalizer: Callable[..., Event], raw_event: Any) -> None:

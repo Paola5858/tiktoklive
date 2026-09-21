@@ -59,6 +59,7 @@ Cada seta acima é um contrato. O objetivo é que cada camada só precise conhec
 - **EVENT_ENGINE isola prioridade**: a prioridade nasce aqui, não no Roblox. O Roblox só executa o que chega, na ordem/urgência que chega.
 - **QUEUE isola throughput**: a fila é o ponto que absorve o descompasso entre "quantos eventos chegam" e "quantos o Roblox consegue processar". É aqui que backpressure e drop policy vivem — não espalhado pelo código.
 - **ROBLOX_BRIDGE isola runtime do Roblox**: Luau não fala a língua interna do event engine. Ele só entende comandos de jogo já traduzidos.
+- **OBSERVABILITY evita falhas silenciosas**: Módulos desacoplados coletam métricas e audit logs sem bloquear o Event Loop ou atrapalhar os workers.
 
 ---
 
@@ -171,6 +172,10 @@ src/
 	    state.py                           # implementado (fase 6) - cooldown, dedupe, rate limit, agregação
 	    engine.py                          # implementado (fase 6) - matching e GameEventFactory
 	    consumer.py                        # implementado (fase 6) - publicação no RobloxBridge
+	  observability/
+	    health.py                          # implementado (fase 7) - Watchdog, ComponentHealth
+	    metrics.py                         # implementado (fase 7) - OperationalSnapshot
+	    audit.py                           # implementado (fase 7) - EventAuditLogger
 roblox/
   ROBLOX_RUNTIME.md       # APIs verificadas, limites e lifecycle
   src/

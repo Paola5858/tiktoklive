@@ -14,7 +14,9 @@
 
 **Fase 6 — Interaction Rules Engine implementado**, com 10 testes novos cobrindo matching por gift/comment, múltiplas ações, cooldown por usuário, dedupe, agregação opt-in, rate limit, expiração, validação e integração com o `RobloxBridge`. A execução local passou com a suíte completa; bursts de 1000 comentários e 100 gifts ainda precisam ser medidos com os limites de produção definidos por dados reais.
 
-O fluxo TikTok→Engine→Rules→RobloxBridge agora tem contratos implementados, mas a composição única do processo e o teste manual no Roblox Studio continuam pendentes. Combos, OBS, MQTT e handlers de mensagem/contador não foram implementados porque ainda não há mecânica real ou consumidor correspondente.
+**Fase 7 — Observability implementada (Unit + Failure Injection)**. Adicionados testes cobrindo deteção de stall de workers assíncronos (`Watchdog`), geração de logs em background (`EventAuditLogger`), coleta consolidada de métricas (`OperationalSnapshot`) e formatter (`JsonFormatter`). O sistema expõe estado em tempo-real `/health` do Bridge.
+
+O fluxo TikTok→Engine→Rules→RobloxBridge agora tem contratos implementados e observabilidade granular, mas a composição única do processo e o teste manual no Roblox Studio continuam pendentes. Combos, OBS, MQTT e handlers de mensagem/contador não foram implementados porque ainda não há mecânica real ou consumidor correspondente.
 
 **Princípio:** cada camada testável isolada. Nada passa pra fase seguinte sem a fundação da fase anterior validada.
 

@@ -33,23 +33,19 @@ _MAX_LIMIT = 200
 _MIN_LIMIT = 1
 
 
-class AckRequest(BaseModel):
-    """Corpo de `POST /ack`.
+from src.observability.metrics import OperationalSnapshot
 
-    `up_to_sequence` precisa ser >= 0. Um valor menor que o já registrado
-    é aceito e simplesmente não regride o marcador (ver `RobloxBridge.ack`).
-    """
+
+class AckRequest(BaseModel):
+    """Corpo de `POST /ack`."""
 
     up_to_sequence: int = Field(ge=0)
 
 
-def create_app(bridge: RobloxBridge) -> FastAPI:
-    """Monta a aplicação FastAPI em torno de um `RobloxBridge` já existente.
-
-    O bridge é injetado (não criado aqui) porque ele também precisa estar
-    registrado no `Dispatcher` do Event Engine — a mesma instância recebe
-    eventos do engine E serve o polling do Roblox.
-    """
+def create_app(
+    bridge: RobloxBridge, snapshot: OperationalSnapshot | None = None
+) -> FastAPI:
+    """Monta a aplicação FastAPI em torno de um `RobloxBridge` já existente."""
     app = FastAPI(
         title="tiktoklive local bridge api",
         version=SCHEMA_VERSION,
@@ -61,7 +57,16 @@ def create_app(bridge: RobloxBridge) -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
-        """Disponibilidade do bridge. Não expõe nem aceita payload de evento."""
+        """Disponibilidade do bridge. Expõe status consolidado se houver snapshot."""
+        if snapshot:
+            snap = snapshot.get_snapshot()
+            status = snap["status"]
+            return {
+                "status": status,
+                "bridge": bridge.health_snapshot(),
+                "system": snap,
+            }
+
         return {"status": "ok", "bridge": bridge.health_snapshot()}
 
     @app.get("/events")

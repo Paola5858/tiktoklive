@@ -2,9 +2,13 @@
 
 event engine que transforma eventos de uma live do TikTok em eventos interativos no Roblox (spawn de avatar, efeitos, etc), com fila, prioridade e observabilidade — sem o Roblox nunca precisar entender a estrutura interna do TikTok.
 
-## status atual: fase 4 — Roblox Bridge
+## status atual: fase 5 - Roblox Avatar Runtime
 
-Domínio, connector de TikTok (`TikTokLive==7.0.1`), Event Engine (fila com prioridade WRR, dedupe, agregação, dispatcher) e agora a ponte com o Roblox (Local API + buffer + consumidor Luau) existem e têm testes automatizados passando — 169 no total. **Ainda não tem**: composição end-to-end num processo só (`app.py`), Gift Mapping Engine, avatar real, OBS, MQTT. Ver `context/ROBLOX_BRIDGE.md` para o contrato completo desta fase, incluindo um achado importante sobre `localhost` e HttpService.
+Domínio, connector de TikTok (`TikTokLive==7.0.1`), Event Engine (fila com prioridade WRR, dedupe, agregação, dispatcher) e a ponte com o Roblox (Local API + buffer + consumidor Luau) existem e têm testes automatizados passando - 169 no total.
+
+A fase 5 adiciona o runtime server-side em `roblox/src`: router de GameEvents, AvatarService, cache bounded, fallback, limites de spawn, efeitos allowlisted e cleanup automático. O `LiveRuntime` agora existe e pode ser conectado ao `BridgeClient` (fase 4).
+
+**Ainda não tem**: composição end-to-end num processo só (`app.py`), Gift Mapping Engine (tradução TikTok -> Roblox Command), OBS, MQTT. Ver `context/ROBLOX_BRIDGE.md` para detalhes do contrato HTTP.
 
 A biblioteca de TikTok é um projeto de engenharia reversa e declara Modified AGPL-3.0. Nesta fase ela é usada localmente e a versão está pinada para que mudanças upstream não alterem silenciosamente o contrato.
 
@@ -59,6 +63,16 @@ python -m src.adapters.local_api
 ```
 
 Sobe a Local API sozinha em `127.0.0.1:8787` com um bridge vazio, pra testar o polling do `roblox/src/BridgeClient.lua` a partir do Roblox Studio. Ver `context/ROBLOX_BRIDGE.md` pra o passo a passo completo e o que ainda não foi validado (nenhum teste manual real em Studio foi feito até agora).
+
+## runtime Roblox
+
+Copie os ModuleScripts de `roblox/src` para um container no `ServerScriptService` do Studio, mantendo-os como irmãos de `init.server.lua`. O Script de entrada cria o `LiveRuntime`, inicia o cleanup e deixa o ponto de integração para o Bridge:
+
+```lua
+local ok, reason = runtime:handle(decodedCommand)
+```
+
+Leia `roblox/ROBLOX_RUNTIME.md` e execute o checklist em `roblox/tests/ROBLOX_RUNTIME_TESTS.md`. A aparência real do avatar e a comunicação com a API local não foram executadas nesta máquina, porque o ambiente não possui Roblox Studio.
 
 ## estrutura
 

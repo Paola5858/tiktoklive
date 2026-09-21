@@ -25,7 +25,7 @@ LOCAL_API (expõe fila processada pra quem consome)
    ↓
 ROBLOX_BRIDGE (Luau consumindo a API local via HttpService)
    ↓
-GAME_ENGINE (spawn, física, efeito, duração, cleanup)
+GAME_ENGINE (router, avatar, efeito, duração, cleanup)
    ↓
 OBS_INTEGRATION (reage ao estado da live)
 
@@ -92,17 +92,18 @@ Evento no schema interno padronizado (ver `EVENT_SCHEMA.md`). A partir daqui, na
 ### EVENT_ENGINE → QUEUE
 Mesmo schema interno, já com `priority` resolvida e `status` inicial definido. Eventos descartados aqui (dedupe, cooldown) não entram na fila — mas ficam registrados no log JSONL pra debug.
 
-### QUEUE → EVENT_ENGINE_DISPATCH → ROBLOXBRIDGE (implementado, fase 4)
+### QUEUE -> EVENT_ENGINE_DISPATCH -> ROBLOXBRIDGE
 O `Dispatcher` (fase 3) despacha cada `Event`/`AggregatedEvent` processado pra todo `EventConsumer` registrado. `RobloxBridge` (`src/adapters/roblox.py`) é um desses consumers: traduz o evento num `GameEventEnvelope` (schema_version 1.0) e guarda num buffer bounded em memória (deque com eviction FIFO), atribuindo um `sequence_number` monotônico.
 
-### ROBLOXBRIDGE → LOCAL_API (implementado, fase 4)
+### ROBLOXBRIDGE -> LOCAL_API (implementado, fase 4)
 A Local API (`src/adapters/local_api.py`, FastAPI) expõe o buffer do bridge: `GET /events?since=<cursor>&limit=<n>` (pull, cursor-based, nunca remove do buffer), `POST /ack` (observabilidade, não controla retenção) e `GET /health` (não expõe nem aceita payload de evento).
 
-### LOCAL_API → BRIDGECLIENT.LUA (implementado, fase 4)
-JSON puro via HTTP. `roblox/src/BridgeClient.lua` faz polling com `HttpService:RequestAsync`, backoff exponencial em falha, dedupe por `event_id` e rejeição segura de `schema_version` desconhecida. Ver `context/ROBLOX_BRIDGE.md` pra o achado sobre localhost em Studio vs experiência publicada e os limites reais do HttpService (500 req/min, portas bloqueadas abaixo de 1024).
 
-### BRIDGECLIENT.LUA → GAME_ENGINE (esqueleto nesta fase, gameplay real é fase 5)
-`GameEventRouter` dentro de `BridgeClient.lua` já separa recebimento de HTTP da execução de gameplay — handlers são registrados por `event_type`, nunca um `if/elseif` gigante. Os handlers de verdade (spawn, efeito por gift) são fase 5, quando o Gift Mapping Engine existir.
+### LOCAL_API -> BRIDGECLIENT.LUA (implementado, fase 4)
+JSON puro via HTTP. `roblox/src/BridgeClient.lua` faz polling com `HttpService:RequestAsync`, backoff exponencial em falha, dedupe por `event_id` e rejeição segura de `schema_version` desconhecida.
+
+### BRIDGECLIENT.LUA -> GAME_ENGINE (implementado, fase 5)
+`GameEventRouter` no `roblox/src` recebe o evento decodificado, valida e faz routing para os handlers específicos da fase 5 (`AvatarService`, `EffectService`, etc). O runtime lida com cache TTL/LRU, lookup concorrente, spawn e limites de instância.
 
 ---
 
@@ -162,9 +163,19 @@ src/
     config.py                       # implementado (fase 3) — EngineConfig
     metrics.py                       # implementado (fase 3)
   adapters/
-    roblox.py                        # implementado (fase 4) — RobloxBridge, GameEventEnvelope
-    local_api.py                      # implementado (fase 4) — FastAPI: /health /events /ack
+    roblox.py                        # implementado (fase 4) - RobloxBridge, GameEventEnvelope
+    local_api.py                      # implementado (fase 4) - FastAPI: /health /events /ack
     obs.py                             # AINDA NÃO EXISTE
+roblox/
+  ROBLOX_RUNTIME.md       # APIs verificadas, limites e lifecycle
+  src/
+    LiveRuntime.lua        # composição, idempotência e shutdown
+    GameEventRouter.lua    # allowlist e roteamento
+    AvatarService.lua      # lookup, cache, fallback e spawn
+    AvatarCache.lua        # TTL + LRU bounded
+    CleanupManager.lua     # active instances e expiração
+    EffectService.lua      # efeitos allowlisted e cleanup
+    BridgeClient.lua       # consumidor Luau: polling, backoff, dedupe, router-esqueleto
   tests/
     unit/                              # implementado — domínio, engine, adapters
     load/                               # implementado (fase 3)

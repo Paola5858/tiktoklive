@@ -32,7 +32,7 @@
 
 	O que este módulo explicitamente NÃO faz (fase 4, avatar_scope):
 	- não faz spawn de avatar, não decide efeito de gift
-	- os handlers abaixo são mocks/placeholders pra fase 5
+	- a composição da fase 6 registra o handler GAME_COMMAND em init.server.lua
 --]]
 
 local HttpService = game:GetService("HttpService")
@@ -73,11 +73,11 @@ local State = {
 }
 
 -- ===========================================================================
--- Game Event Router — placeholder pra fase 5
+-- Game Event Router — transporte; gameplay fica no LiveRuntime
 -- ===========================================================================
 
--- Handlers registráveis por event_type. Nesta fase só existe um handler
--- padrão que loga — a decisão de gameplay (spawn, efeito) é fase 5.
+-- Handlers registráveis por event_type. O handler GAME_COMMAND é registrado
+-- pela composição server-side em init.server.lua.
 local GameEventRouter = {}
 GameEventRouter._handlers = {}
 
@@ -102,7 +102,7 @@ function GameEventRouter.route(envelope: table)
 	end
 end
 
--- Handler padrão de exemplo — só imprime. Substituir na fase 5.
+-- Handlers de observabilidade para eventos legados.
 GameEventRouter.register("COMMENT", function(envelope)
 	print(("[BridgeClient] COMMENT de %s: %s"):format(
 		envelope.user and envelope.user.display_name or "?",
@@ -116,6 +116,10 @@ GameEventRouter.register("AGGREGATED", function(envelope)
 		envelope.payload and envelope.payload.count or 0
 	))
 end)
+
+-- A composição server-side registra o handler real em init.server.lua.
+-- O transporte apenas encaminha o payload; validação e allowlist ficam no
+-- LiveRuntime/GameEventRouter.
 
 -- ===========================================================================
 -- Deduplicação (idempotência do lado Roblox — ver ROBLOX_BRIDGE.md)

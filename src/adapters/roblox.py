@@ -35,6 +35,7 @@ from typing import Any
 
 from src.domain.events import AggregatedEvent, Event
 from src.domain.priorities import DEFAULT_PRIORITY_BY_EVENT_TYPE, Priority
+from src.interaction.models import GameEvent
 from src.logging import get_logger
 
 LOGGER = get_logger(__name__)
@@ -175,6 +176,25 @@ def to_envelope(event: Event | AggregatedEvent, sequence_number: int) -> GameEve
     )
 
 
+def game_event_to_envelope(event: GameEvent, sequence_number: int) -> GameEventEnvelope:
+    """Traduz um GameEvent produzido pelo Interaction Rules Engine.
+
+    O payload mantém o comando completo porque o consumidor Roblox precisa
+    encaminhá-lo ao runtime, mas o envelope continua usando o contrato de
+    transporte versionado da fase 4.
+    """
+    return GameEventEnvelope(
+        sequence_number=sequence_number,
+        event_id=event.event_id,
+        event_type=event.event_type,
+        timestamp=_iso(event.timestamp),
+        priority=int(event.priority),
+        payload=dict(event.payload),
+        source="interaction_rules",
+        user=None,
+    )
+
+
 class RobloxBridge:
     """Consumer do Event Engine que alimenta o buffer de entrega do Roblox.
 
@@ -231,6 +251,21 @@ class RobloxBridge:
             evicted = len(self._buffer) == self._buffer.maxlen
             self._buffer.append(envelope)
 
+            self._events_delivered_total += 1
+            if evicted:
+                self._events_evicted_total += 1
+            self._last_event_at = datetime.now(timezone.utc)
+            self._highest_sequence_ever = seq
+            if self._lowest_sequence_ever == 0:
+                self._lowest_sequence_ever = seq
+
+    async def publish_game_event(self, event: GameEvent) -> None:
+        """Publica um GameEvent já resolvido pelo Interaction Rules Engine."""
+        with self._lock:
+            seq = next(self._sequence)
+            envelope = game_event_to_envelope(event, seq)
+            evicted = len(self._buffer) == self._buffer.maxlen
+            self._buffer.append(envelope)
             self._events_delivered_total += 1
             if evicted:
                 self._events_evicted_total += 1

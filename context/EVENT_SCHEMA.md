@@ -112,6 +112,14 @@ Esse é o formato que deve atravessar a LOCAL_API até o Roblox quando essa trad
 
 **Nota importante:** `actor.source_user_id` aqui é o ID na origem (TikTok). A resolução pra um usuário/avatar do Roblox é uma etapa separada — ver `DECISIONS.md` (resolução de identidade TikTok → Roblox). O conjunto real de `command_type` deve ser pequeno até as mecânicas serem validadas.
 
+## Interaction Rules Engine — fase 6
+
+O engine consome `Event` normalizado e produz um `GameEvent` intermediário. A regra não conhece Roblox, e o connector não conhece regras. O `GameEvent` atravessa o envelope de transporte com `event_type: "GAME_COMMAND"`; o payload contém o comando completo conforme o formato acima.
+
+Na implementação atual, somente `SPAWN_AVATAR` tem handler real no Roblox Runtime. Regras que declaram `SHOW_MESSAGE`, `UPDATE_COUNTER` ou qualquer outro action type são rejeitadas na validação. `PLAY_EFFECT` também permanece futuro como action independente; efeitos existentes são parâmetros allowlisted do spawn. Isso evita publicar comandos que o consumidor ainda não sabe executar.
+
+O matching usa apenas `event_type`, `gift_id`, `gift_name`, palavra-chave de comentário, `min_quantity` e identidade externa explicitamente configurada. `gift_id` e `gift_name` vêm do normalizer verificado; nenhum valor econômico ou streak é inventado. Cooldown, dedupe, rate limit e agregação possuem limites e TTL documentados em `context/INTERACTION_RULES.md`.
+
 ---
 
 ## gift mapping (config, não código)

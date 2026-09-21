@@ -2,13 +2,13 @@
 
 event engine que transforma eventos de uma live do TikTok em eventos interativos no Roblox (spawn de avatar, efeitos, etc), com fila, prioridade e observabilidade — sem o Roblox nunca precisar entender a estrutura interna do TikTok.
 
-## status atual: fase 5 - Roblox Avatar Runtime
+## status atual: fase 6 - Interaction Rules Engine
 
-Domínio, connector de TikTok (`TikTokLive==7.0.1`), Event Engine (fila com prioridade WRR, dedupe, agregação, dispatcher) e a ponte com o Roblox (Local API + buffer + consumidor Luau) existem e têm testes automatizados passando - 169 no total.
+Domínio, connector de TikTok (`TikTokLive==7.0.1`), Event Engine, Roblox Bridge/Local API e runtime server-side existem. A fase 6 adiciona regras declarativas, mapping de gifts, ações intermediárias, cooldown, dedupe, rate limit, agregação opt-in e expiração.
 
-A fase 5 adiciona o runtime server-side em `roblox/src`: router de GameEvents, AvatarService, cache bounded, fallback, limites de spawn, efeitos allowlisted e cleanup automático. O `LiveRuntime` agora existe e pode ser conectado ao `BridgeClient` (fase 4).
+A fase 5 adicionou o runtime server-side em `roblox/src`. A fase 6 conecta `InteractionConsumer` ao `RobloxBridge`: o envelope `GAME_COMMAND` leva um comando validado até o `LiveRuntime`, sem colocar regras de gift no connector ou no AvatarService.
 
-**Ainda não tem**: composição end-to-end num processo só (`app.py`), Gift Mapping Engine (tradução TikTok -> Roblox Command), OBS, MQTT. Ver `context/ROBLOX_BRIDGE.md` para detalhes do contrato HTTP.
+**Ainda não tem**: composição end-to-end num processo só (`app.py`), combos, handlers reais de mensagem/contador, OBS e MQTT. Combos e ações sem consumidor foram adiados de propósito. Ver `context/INTERACTION_RULES.md` e `context/ROBLOX_BRIDGE.md`.
 
 A biblioteca de TikTok é um projeto de engenharia reversa e declara Modified AGPL-3.0. Nesta fase ela é usada localmente e a versão está pinada para que mudanças upstream não alterem silenciosamente o contrato.
 
@@ -20,6 +20,7 @@ A biblioteca de TikTok é um projeto de engenharia reversa e declara Modified AG
 - [`context/DECISIONS.md`](context/DECISIONS.md) — decisões arquiteturais registradas
 - [`context/TEST_PLAN.md`](context/TEST_PLAN.md) — plano de testes por fase
 - [`context/ROBLOX_BRIDGE.md`](context/ROBLOX_BRIDGE.md) — a ponte Python ↔ Roblox: contrato, polling, idempotência, o que se sabe sobre localhost
+- [`context/INTERACTION_RULES.md`](context/INTERACTION_RULES.md) — regras declarativas, gifts, actions, cooldown, dedupe, rate limit e agregação
 
 ## setup
 

@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "rules": [
+    {
+      "id": "gift_by_stable_id",
+      "enabled": true,
+      "event_type": "GIFT",
+      "match": {
+        "gift_name": "example_gift"
+      },
+      "actions": [
+        {
+          "type": "SPAWN_AVATAR",
+          "params": {
+            "duration_seconds": 60,
+            "effect": "HEARTS"
+          }
+        }
+      ],
+      "priority": "P1",
+      "cooldown": {
+        "scope": "user",
+        "seconds": 3
+      }
+    },
+    {
+      "id": "comment_keyword_visual",
+      "enabled": false,
+      "event_type": "COMMENT",
+      "match": {
+        "keyword": "example",
+        "case_sensitive": false
+      },
+      "actions": [
+        {
+          "type": "SPAWN_AVATAR",
+          "params": {
+            "duration_seconds": 30,
+            "effect": "BLUE_GLOW"
+          }
+        }
+      ],
+      "priority": "P3",
+      "cooldown": {
+        "scope": "user",
+        "seconds": 10
+      }
+    }
+  ]
+}

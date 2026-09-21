@@ -12,7 +12,9 @@
 
 **Fase 5 — Roblox Avatar Runtime implementado em Luau**, com router, handlers, identidade explícita, cache TTL/LRU, lookup in-flight, fallback, limite de instâncias, limite de spawn, efeitos allowlisted e cleanup centralizado. Como não há Roblox Studio nem runtime Luau neste ambiente, a validação executável desta fase é o checklist em `roblox/tests/ROBLOX_RUNTIME_TESTS.md`; criação efetiva de avatar, transporte HTTP e impacto de frame ainda não foram medidos.
 
-Tudo o resto abaixo (integração ponta a ponta TikTok→Engine→Roblox, Gift Mapping Engine, avatar, OBS) **ainda não foi implementado** — depende das fases seguintes. Este plano define o que precisa ser provado antes de considerar o sistema funcional. Resultados devem registrar ambiente, versão, dados usados e evidências — nenhum resultado deve ser inventado.
+**Fase 6 — Interaction Rules Engine implementado**, com 10 testes novos cobrindo matching por gift/comment, múltiplas ações, cooldown por usuário, dedupe, agregação opt-in, rate limit, expiração, validação e integração com o `RobloxBridge`. A execução local passou com a suíte completa; bursts de 1000 comentários e 100 gifts ainda precisam ser medidos com os limites de produção definidos por dados reais.
+
+O fluxo TikTok→Engine→Rules→RobloxBridge agora tem contratos implementados, mas a composição única do processo e o teste manual no Roblox Studio continuam pendentes. Combos, OBS, MQTT e handlers de mensagem/contador não foram implementados porque ainda não há mecânica real ou consumidor correspondente.
 
 **Princípio:** cada camada testável isolada. Nada passa pra fase seguinte sem a fundação da fase anterior validada.
 

@@ -162,10 +162,15 @@ src/
     processor.py                   # implementado (fase 3) — orquestrador do pipeline
     config.py                       # implementado (fase 3) — EngineConfig
     metrics.py                       # implementado (fase 3)
-  adapters/
-    roblox.py                        # implementado (fase 4) - RobloxBridge, GameEventEnvelope
-    local_api.py                      # implementado (fase 4) - FastAPI: /health /events /ack
-    obs.py                             # AINDA NÃO EXISTE
+	  adapters/
+	    roblox.py                        # implementado (fase 4) - RobloxBridge, GameEventEnvelope
+	    local_api.py                      # implementado (fase 4) - FastAPI: /health /events /ack
+	    obs.py                             # AINDA NÃO EXISTE
+	  interaction/
+	    models.py                          # implementado (fase 6) - regras, actions e GameEvent
+	    state.py                           # implementado (fase 6) - cooldown, dedupe, rate limit, agregação
+	    engine.py                          # implementado (fase 6) - matching e GameEventFactory
+	    consumer.py                        # implementado (fase 6) - publicação no RobloxBridge
 roblox/
   ROBLOX_RUNTIME.md       # APIs verificadas, limites e lifecycle
   src/
@@ -184,8 +189,8 @@ roblox/
 roblox/
   src/
     BridgeClient.lua                       # implementado (fase 4) — polling, backoff, dedupe, router-esqueleto
-configs/
-  gift-mappings.example.yaml                 # AINDA NÃO EXISTE — decisão de onde mora o Gift Mapping Engine em aberto
+	configs/
+	  interaction_rules.json                     # implementado (fase 6) — regras declarativas validadas
 events/                                       # AINDA NÃO EXISTE — log JSONL por dia
 context/                                       # PROJECT_SPEC, ARCHITECTURE, EVENT_SCHEMA, DECISIONS, TEST_PLAN, ROBLOX_BRIDGE
 ```

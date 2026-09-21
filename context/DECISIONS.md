@@ -178,3 +178,19 @@ O fallback é um Model local com Part ancorada e Humanoid, sem rede ou asset ID.
 ## DECIDIDO — efeitos allowlisted sem conteúdo arbitrário
 
 Os efeitos iniciais são `HEARTS`, `GOLD_AURA` e `BLUE_GLOW`, implementados com `Highlight`. Asset IDs, scripts externos e texto do TikTok não controlam código, instâncias ou assets. Todo efeito possui lifetime e é destruído pelo seu serviço ou no shutdown.
+
+## DECIDIDO — Interaction Rules Engine declarativo (fase 6)
+
+Regras vivem em `configs/interaction_rules.json` e são validadas para produzir `ActionDefinition`, `ActionResult` e finalmente `GameEvent`. O connector TikTok continua limitado à normalização; o Roblox Runtime continua limitado à execução. O `InteractionConsumer` conecta o Dispatcher ao `RobloxBridge` sem criar uma fila paralela.
+
+## DECIDIDO — apenas actions com consumidor real
+
+Nesta fase, `SPAWN_AVATAR` é o único action type habilitado porque é o único handler de gameplay implementado e conectado. `PLAY_EFFECT`, `SHOW_MESSAGE` e `UPDATE_COUNTER` permanecem conceitos futuros; efeitos já existentes entram como parâmetro allowlisted do spawn. Uma configuração que aceita uma action sem consumidor só cria sucesso falso, então ela falha cedo.
+
+## DECIDIDO — gifts, quantidade e streaks sem suposição
+
+O normalizer verificado fornece `gift_id`, `gift_name`, `repeat_count`, `combo_count` e `repeat_end`. O engine usa `gift_id`/`gift_name` para matching e `repeat_count` apenas quando `min_quantity` foi configurado. Não existe interpretação de coins ou streak, pois o contrato atual não prova sua semântica operacional nem evita contagem dupla.
+
+## DECIDIDO — agregação opt-in, combos adiados
+
+Agregação exige configuração explícita de janela e threshold e possui máximo de estados. Gifts não são agregados por padrão. Combos não foram implementados porque ainda não há uma mecânica real que justifique estado adicional bounded, reset, timeout e dedupe.

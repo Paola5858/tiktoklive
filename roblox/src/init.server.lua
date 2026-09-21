@@ -3,6 +3,7 @@
 -- Este módulo não interpreta TikTok nem executa código vindo do payload.
 
 local LiveRuntime = require(script.Parent.LiveRuntime)
+local BridgeClient = require(script.Parent.BridgeClient)
 
 local runtime = LiveRuntime.new({
     containerName = "LiveActors",
@@ -13,9 +14,18 @@ local runtime = LiveRuntime.new({
 
 runtime:start()
 
+BridgeClient.GameEventRouter.register("GAME_COMMAND", function(envelope)
+    local ok, reason = runtime:handle(envelope.payload)
+    if not ok then
+        warn("[LiveRuntime] comando rejeitado", reason)
+    end
+end)
+BridgeClient.start()
+
 -- Garante cleanup das instâncias temporárias quando o servidor fechar.
 -- stop() é idempotente: pode ser chamado mais de uma vez com segurança.
 game:BindToClose(function()
+    BridgeClient.stop()
     runtime:stop()
 end)
 

@@ -243,36 +243,28 @@ class RobloxBridge:
         # de produto pra fase 5, quando o Gift Mapping Engine existir.
         return True
 
+    def _push(self, envelope: GameEventEnvelope) -> None:
+        """Adiciona envelope ao buffer. Deve ser chamado com self._lock adquirido."""
+        evicted = len(self._buffer) == self._buffer.maxlen
+        self._buffer.append(envelope)
+        self._events_delivered_total += 1
+        if evicted:
+            self._events_evicted_total += 1
+        self._last_event_at = datetime.now(timezone.utc)
+        self._highest_sequence_ever = envelope.sequence_number
+        if self._lowest_sequence_ever == 0:
+            self._lowest_sequence_ever = envelope.sequence_number
+
     async def handle(self, event: Event | AggregatedEvent) -> None:
         with self._lock:
-            seq = next(self._sequence)
-            envelope = to_envelope(event, seq)
-
-            evicted = len(self._buffer) == self._buffer.maxlen
-            self._buffer.append(envelope)
-
-            self._events_delivered_total += 1
-            if evicted:
-                self._events_evicted_total += 1
-            self._last_event_at = datetime.now(timezone.utc)
-            self._highest_sequence_ever = seq
-            if self._lowest_sequence_ever == 0:
-                self._lowest_sequence_ever = seq
+            envelope = to_envelope(event, next(self._sequence))
+            self._push(envelope)
 
     async def publish_game_event(self, event: GameEvent) -> None:
         """Publica um GameEvent já resolvido pelo Interaction Rules Engine."""
         with self._lock:
-            seq = next(self._sequence)
-            envelope = game_event_to_envelope(event, seq)
-            evicted = len(self._buffer) == self._buffer.maxlen
-            self._buffer.append(envelope)
-            self._events_delivered_total += 1
-            if evicted:
-                self._events_evicted_total += 1
-            self._last_event_at = datetime.now(timezone.utc)
-            self._highest_sequence_ever = seq
-            if self._lowest_sequence_ever == 0:
-                self._lowest_sequence_ever = seq
+            envelope = game_event_to_envelope(event, next(self._sequence))
+            self._push(envelope)
 
     # ------------------------------------------------------------------
     # API pra Local API consumir

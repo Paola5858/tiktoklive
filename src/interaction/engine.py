@@ -145,7 +145,6 @@ class InteractionRuleEngine:
             if rule.stop_processing:
                 break
         self.metrics.aggregations_created = self.aggregator.created
-        self.metrics.dedupe_hits = self.metrics.dedupe_hits
         # Rate limiting is applied to produced actions, preserving P0.
         allowed: list[GameEvent] = []
         for game_event in actions:

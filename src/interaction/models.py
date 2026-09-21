@@ -108,6 +108,11 @@ class ActionDefinition:
             duration = self.params.get("duration_seconds", 60)
             if not isinstance(duration, (int, float)) or not 1 <= duration <= 86_400:
                 raise ValueError("duration_seconds inválido")
+            effect = self.params.get("effect")
+            if effect is not None and effect not in {"HEARTS", "GOLD_AURA", "BLUE_GLOW"}:
+                raise ValueError(
+                    f"effect '{effect}' não está na allowlist do runtime Roblox"
+                )
         if self.action_type == ActionType.PLAY_EFFECT:
             effect = self.params.get("effect")
             if effect not in {"HEARTS", "GOLD_AURA", "BLUE_GLOW"}:

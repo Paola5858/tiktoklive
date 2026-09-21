@@ -3,10 +3,13 @@
 event engine que transforma eventos de uma live do TikTok em eventos interativos no Roblox (spawn de avatar, efeitos, etc), com fila, prioridade e observabilidade — sem o Roblox nunca precisar entender a estrutura interna do TikTok.
 
 ## status atual: fase 6 - Interaction Rules Engine
+## status atual: fase 8 - OBS Integration & Stream Automation
 
 Domínio, connector de TikTok (`TikTokLive==7.0.1`), Event Engine, Roblox Bridge/Local API e runtime server-side existem. A fase 6 adiciona regras declarativas, mapping de gifts, ações intermediárias, cooldown, dedupe, rate limit, agregação opt-in e expiração.
+Domínio, connector de TikTok (`TikTokLive==7.0.1`), Event Engine, Roblox Bridge/Local API, Rule Engine, Observabilidade e OBS Integration existem. A fase 8 adiciona o `OBSAdapter` desacoplado para automação de transmissões no OBS Studio via obs-websocket 5.x.
 
 A fase 5 adicionou o runtime server-side em `roblox/src`. A fase 6 conecta `InteractionConsumer` ao `RobloxBridge`: o envelope `GAME_COMMAND` leva um comando validado até o `LiveRuntime`, sem colocar regras de gift no connector ou no AvatarService.
+A fase 8 conecta o `OBSAdapter` como `EventConsumer` no `Dispatcher`: ações de cena, troca de fontes, mídias e texto de overlay são validadas contra allowlists estritas e enfileiradas em background sem impactar a latência do motor principal. Ver `context/OBS_INTEGRATION.md`.
 
 **Ainda não tem**: composição end-to-end num processo só (`app.py`), combos, handlers reais de mensagem/contador, OBS e MQTT. Combos e ações sem consumidor foram adiados de propósito. Ver `context/INTERACTION_RULES.md` e `context/ROBLOX_BRIDGE.md`.
 
@@ -21,6 +24,7 @@ A biblioteca de TikTok é um projeto de engenharia reversa e declara Modified AG
 - [`context/TEST_PLAN.md`](context/TEST_PLAN.md) — plano de testes por fase
 - [`context/ROBLOX_BRIDGE.md`](context/ROBLOX_BRIDGE.md) — a ponte Python ↔ Roblox: contrato, polling, idempotência, o que se sabe sobre localhost
 - [`context/INTERACTION_RULES.md`](context/INTERACTION_RULES.md) — regras declarativas, gifts, actions, cooldown, dedupe, rate limit e agregação
+- [`context/OBS_INTEGRATION.md`](context/OBS_INTEGRATION.md) — integração com OBS Studio: protocol websocket 5.x, allowlists, prioridade e resiliência
 
 ## setup
 

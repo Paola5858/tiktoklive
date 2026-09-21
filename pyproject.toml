@@ -7,6 +7,7 @@ dependencies = [
     "TikTokLive==7.0.1",
     "fastapi>=0.115,<1.0",
     "uvicorn>=0.30,<1.0",
+    "obsws-python>=1.7,<2.0",
 ]
 
 [project.optional-dependencies]

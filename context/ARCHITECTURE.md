@@ -3,6 +3,7 @@
 ## estado atual
 
 Domínio, connector de TikTok (`TikTokLive 7.0.1`), Event Engine (fila com prioridade, dedupe, agregação, dispatcher) e agora o Roblox Bridge (Local API + buffer + consumidor Luau) existem e têm testes automatizados passando. Ver `context/ROBLOX_BRIDGE.md` para o contrato completo da fase 4. **Ainda não existe** composição end-to-end (`app.py` ligando TikTok + engine + bridge num processo só), Gift Mapping Engine, avatar real, nem OBS.
+Domínio, connector de TikTok (`TikTokLive 7.0.1`), Event Engine (fila com prioridade, dedupe, agregação, dispatcher), Roblox Bridge (Local API + buffer + consumidor Luau), Rule Engine (Fase 6), Observabilidade (Fase 7) e OBS Integration (Fase 8) existem e têm testes automatizados passando. Ver `context/OBS_INTEGRATION.md` para a especificação do OBS Adapter. **Ainda não existe** composição end-to-end (`app.py` ligando TikTok + engine + bridge num processo só).
 
 ---
 
@@ -30,6 +31,16 @@ GAME_ENGINE (router, avatar, efeito, duração, cleanup)
 OBS_INTEGRATION (reage ao estado da live)
 
 OBSERVABILITY atravessa todas as camadas (métricas + logs + watchdog)
+TikTok Event → Normalizer → Event Engine → Priority Queue
+   → Dispatcher.dispatch(event)
+       ├── InteractionConsumer → InteractionRuleEngine → RobloxBridge
+       └── OBSAdapter.handle(event)                                 [Phase 8]
+               ↓ (non-blocking: enqueue only)
+           OBSPriorityQueue (bounded, priority, dedupe, expiration)
+               ↓ (background worker task)
+           OBSAdapter._worker_task
+               ↓ (run_in_executor → sync obsws-python ReqClient)
+           OBS Studio WebSocket 5.x (port 4455)
 ```
 
 Cada seta acima é um contrato. O objetivo é que cada camada só precise conhecer o contrato da vizinha, nunca a implementação interna dela.
@@ -167,6 +178,7 @@ src/
 	    roblox.py                        # implementado (fase 4) - RobloxBridge, GameEventEnvelope
 	    local_api.py                      # implementado (fase 4) - FastAPI: /health /events /ack
 	    obs.py                             # AINDA NÃO EXISTE
+	    obs.py                             # implementado (fase 8) - OBSAdapter, OBSPriorityQueue, OBSActionValidator
 	  interaction/
 	    models.py                          # implementado (fase 6) - regras, actions e GameEvent
 	    state.py                           # implementado (fase 6) - cooldown, dedupe, rate limit, agregação

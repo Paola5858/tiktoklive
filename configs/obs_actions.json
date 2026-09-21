@@ -1,0 +1,49 @@
+{
+  "_comment": "Configuração de mapeamento de eventos OBS para o TikTok × Roblox Live Engine.",
+  "_warning": "Os nomes de cena e fonte aqui são EXEMPLOS. Substitua pelos nomes reais do seu OBS.",
+  "_schema": "obs_actions_v1.0",
+  "schema_version": "1.0",
+  "allowed_scenes": [
+    "Main",
+    "BRB",
+    "Starting",
+    "Ending"
+  ],
+  "_comment_scenes": "Listar apenas cenas que devem ser acessíveis por automação. Qualquer cena fora desta lista será rejeitada.",
+  "allowed_sources": [
+    "alert_overlay",
+    "event_ticker"
+  ],
+  "_comment_sources": "Listar apenas fontes que devem ser controladas por automação. Fontes fora desta lista são rejeitadas.",
+  "rules": [
+    {
+      "_comment": "Regra de exemplo: gift de alta prioridade ativa a cena principal",
+      "enabled": false,
+      "match_event_type": "GIFT",
+      "match_priority": ["P1"],
+      "action": "OBS_SET_SCENE",
+      "params": {
+        "scene_name": "Main"
+      },
+      "priority": 1,
+      "expires_after_s": 30,
+      "cooldown_s": 5.0,
+      "dedupe_key": "gift_to_main_scene"
+    },
+    {
+      "_comment": "Regra de exemplo: habilitar overlay de alerta em evento especial",
+      "enabled": false,
+      "match_event_type": "GIFT",
+      "match_priority": ["P1", "P2"],
+      "action": "OBS_SET_SOURCE_ENABLED",
+      "params": {
+        "scene_name": "Main",
+        "source_name": "alert_overlay",
+        "enabled": true
+      },
+      "priority": 1,
+      "expires_after_s": 15
+    }
+  ],
+  "_note": "Esta configuração é carregada na inicialização. Não suporta hot reload nesta fase. Alterar este arquivo requer reiniciar o engine."
+}

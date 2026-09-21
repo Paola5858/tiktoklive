@@ -17,6 +17,9 @@
 **Fase 7 — Observability implementada (Unit + Failure Injection)**. Adicionados testes cobrindo deteção de stall de workers assíncronos (`Watchdog`), geração de logs em background (`EventAuditLogger`), coleta consolidada de métricas (`OperationalSnapshot`) e formatter (`JsonFormatter`). O sistema expõe estado em tempo-real `/health` do Bridge.
 
 O fluxo TikTok→Engine→Rules→RobloxBridge agora tem contratos implementados e observabilidade granular, mas a composição única do processo e o teste manual no Roblox Studio continuam pendentes. Combos, OBS, MQTT e handlers de mensagem/contador não foram implementados porque ainda não há mecânica real ou consumidor correspondente.
+**Fase 8 — OBS Integration implementada (274 testes totais passando)**. `src/tests/unit/test_obs_adapter.py` e `src/tests/load/test_obs_failure.py` adicionados. Cobre: validação de `OBSConfig`, allowlists de cena/fonte (`OBSActionValidator`), sanitização de texto, rejeição de filepaths/URLs externos, enfileiramento não-bloqueante via `OBSPriorityQueue`, state machine de conexão/reconexão com backoff exponencial, graceful degradation quando OBS desabilitado ou offline, preservação de P0/P1 sob saturação da fila, e cancelamento de restauração de cena temporária em caso de override manual pelo streamer. Executados com `pytest src/tests/ -v` — **274 passed**.
+
+O fluxo TikTok→Engine→Rules→RobloxBridge + OBS Adapter agora tem contratos implementados e observabilidade granular. A composição única do processo (`app.py`) e o teste manual no Roblox Studio e OBS Studio continuam pendentes.
 
 **Princípio:** cada camada testável isolada. Nada passa pra fase seguinte sem a fundação da fase anterior validada.
 

@@ -202,3 +202,21 @@ O `EventAuditLogger` envia rastros para os arquivos JSONL por meio de um `asynci
 ## DECIDIDO — watchdog de ausência de progresso, não só processo vivo (fase 7)
 
 A saúde do sistema é avaliada pelo tempo desde o último avanço útil (`mark_active` e `record_success`), ao invés de checar se o processo está rodando ou se a porta 8787 responde. Isso ataca diretamente falhas silenciosas de coroutines travadas (ex. starvation de worker).
+
+---
+
+## DECIDIDO — obsws-python para obs-websocket 5.x (fase 8)
+
+Biblioteca `obsws-python>=1.7,<2.0` escolhida para comunicação com OBS Studio. O cliente síncrono `ReqClient` é isolado e encapsulado usando `loop.run_in_executor(None, ...)` com timeout, garantindo que requisições bloqueantes do cliente OBS nunca travem o loop asyncio do Event Engine.
+
+## DECIDIDO — OBS Adapter como consumidor desacoplado no Dispatcher (fase 8)
+
+O `OBSAdapter` registra-se no `Dispatcher` como `EventConsumer`. O método `handle()` apenas valida e enfileira `OBSAction` em uma fila prioritária própria (`OBSPriorityQueue`), retornando imediatamente. Uma worker task em background consome as ações e executa a comunicação via WebSocket. Se o OBS falhar, desconectar ou travar, a ingestão do TikTok e o Roblox Bridge continuam operando normalmente sem degradação.
+
+## DECIDIDO — allowlists estritas e proteção contra payloads maliciosos (fase 8)
+
+Cenas e fontes do OBS só podem ser acionadas se constarem nas allowlists configuradas (`allowed_scenes` e `allowed_sources`). Requisições para reproduzir mídias (`OBS_TRIGGER_MEDIA`) recusam paths de arquivos locais ou URLs externas vindas do payload do evento — mídias devem ser predefinidas no OBS. Textos enviados a overlays de tela têm caracteres de controle removidos para evitar erros de renderização.
+
+## DECIDIDO — respeitar override manual do streamer em efeitos temporários (fase 8)
+
+Efeitos visuais temporários (ex: trocar para a cena de celebração por 5 segundos e retornar) verificam a cena atual no OBS antes de restaurar a cena inicial. Se o streamer mudou a cena manualmente no OBS durante o efeito, o efeito cancela a restauração automática para priorizar a decisão manual do streamer.

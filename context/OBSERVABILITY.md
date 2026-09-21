@@ -34,6 +34,7 @@ Substituição do `logging` padrão para arquivos, através da classe `JsonForma
 ## Contrato de Dados (`GET /health`)
 
 A chamada `GET /health` do bridge retorna o seguinte formato de payload:
+A chamada `GET /health` do bridge retorna o seguinte formato de payload (incluindo o snapshot do `OBSAdapter` quando habilitado):
 
 ```json
 {
@@ -48,6 +49,30 @@ A chamada `GET /health` do bridge retorna o seguinte formato de payload:
     "last_poll_at": "2026-09-21T19:40:02Z",
     "last_acknowledged_sequence": 1200,
     "highest_sequence_ever": 1204
+  },
+  "obs": {
+    "status": "healthy",
+    "enabled": true,
+    "connected": true,
+    "host": "localhost",
+    "port": 4455,
+    "last_success_at": "2026-09-21T20:10:00Z",
+    "last_error": null,
+    "last_request_latency_ms": 4.2,
+    "queue_depth": 0,
+    "current_scene": "Main",
+    "metrics": {
+      "obs_connect_attempts_total": 1,
+      "obs_reconnects_total": 0,
+      "obs_requests_total": 42,
+      "obs_request_failures_total": 0,
+      "obs_scene_changes": 3,
+      "obs_source_updates": 12,
+      "obs_media_triggers": 5,
+      "obs_actions_queued": 42,
+      "obs_actions_dropped": 0,
+      "obs_actions_expired": 0
+    }
   },
   "system": {
     "status": "healthy",
@@ -92,3 +117,4 @@ A chamada `GET /health` do bridge retorna o seguinte formato de payload:
 2. **Queda de Conexão com TikTok:** O conector reporta a falha e entra em backoff exponencial. O Watchdog indica `DISCONNECTED`.
 3. **Roblox Bridge Cheio:** Fica registrado no total de `events_evicted_total` dentro da propriedade `bridge`.
 4. **Roblox Fora do Ar:** Se o jogo no Roblox para de fazer pooling, o `last_activity_age_ms` do `RobloxBridgeConsumer` subirá, disparando a condição `unhealthy` no Watchdog.
+5. **OBS Offline ou Desconectado:** O `OBSAdapter` transita para `RECONNECTING` / `DEGRADED`. Ações de stream acumulam em sua `OBSPriorityQueue` sem bloquear a ingestão do TikTok ou os comandos do Roblox.

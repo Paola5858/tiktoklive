@@ -31,12 +31,14 @@ class InteractionConsumer:
     async def handle(self, event: Event | AggregatedEvent) -> None:
         if not isinstance(event, Event):
             return
+        game_events = self.engine.evaluate(event)
         try:
             game_events = self.engine.evaluate(event)
         except Exception:
             LOGGER.exception("InteractionRuleEngine falhou ao avaliar evento %s", event.event_id)
             return
         for game_event in game_events:
+            if not self.engine.is_expired(game_event):
             if self.engine.is_expired(game_event):
                 continue
             try:

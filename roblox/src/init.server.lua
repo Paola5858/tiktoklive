@@ -13,6 +13,12 @@ local runtime = LiveRuntime.new({
 
 runtime:start()
 
+-- Garante cleanup das instâncias temporárias quando o servidor fechar.
+-- stop() é idempotente: pode ser chamado mais de uma vez com segurança.
+game:BindToClose(function()
+    runtime:stop()
+end)
+
 -- Integração esperada com o Bridge, na fase de transporte:
 -- local ok, reason = runtime:handle(decodedCommand)
 -- if not ok then warn("LiveRuntime rejected command", reason) end

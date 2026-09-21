@@ -81,10 +81,18 @@ function LiveRuntime:start()
 end
 
 function LiveRuntime:stop()
+    if not self.running then
+        return
+    end
     self.running = false
+    -- Cancela o thread de cleanup em vez de apenas nil a referência.
+    -- task.cancel é seguro mesmo se o thread já terminou.
+    if self.cleanupTask then
+        task.cancel(self.cleanupTask)
+        self.cleanupTask = nil
+    end
     self.effectService:destroyAll()
     self.cleanupManager:destroyAll()
-    self.cleanupTask = nil
 end
 
 function LiveRuntime:metricsSnapshot()

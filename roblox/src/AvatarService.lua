@@ -76,6 +76,11 @@ function AvatarService:_lookupDescription(userId)
     end
     self.metrics:record("avatarCacheMisses")
 
+    -- Luau usa scheduler cooperativo: sem preempção entre yields, portanto o
+    -- bloco entre o get do inFlight e o set é atomicamente seguro. Dois
+    -- coroutines que chegam ao mesmo tempo só podem concorrer após um yield
+    -- (task.wait), e ambos só chegam ao while *depois* que o primeiro setou
+    -- self.inFlight[userId].
     if self.inFlight[userId] then
         local state = self.inFlight[userId]
         while not state.done do
@@ -93,9 +98,11 @@ function AvatarService:_lookupDescription(userId)
         return game:GetService("Players"):GetHumanoidDescriptionFromUserIdAsync(userId)
     end)
     if not ok then
+        -- IMPORTANTE: setar done = true ANTES de limpar inFlight para que
+        -- coroutines já em espera no while loop possam sair normalmente.
+        state.done = true
         self.inFlight[userId] = nil
         self.metrics:record("avatarLookupFailures")
-        state.done = true
         return nil, "lookup_failed"
     end
     self.cache:set(userId, description)
@@ -131,7 +138,13 @@ function AvatarService:_spawn(command)
     local actor = command.actor or {}
     local displayName = actor.display_name or "Live Viewer"
     local userId, identitySource = self.identityResolver:resolve(command)
-    local position = self.config.spawnOrigin + self.config.spawnSpacing * (self.spawnSequence % 10)
+    -- Grid de spawn: até 10 colunas no eixo X, novas linhas no eixo Z.
+    -- Evita sobreposição quando há mais de 10 avatares simultâneos.
+    local col = self.spawnSequence % 10
+    local row = math.floor(self.spawnSequence / 10)
+    local position = self.config.spawnOrigin
+        + self.config.spawnSpacing * col
+        + Vector3.new(0, 0, self.config.spawnSpacing.X * row)
     self.spawnSequence += 1
 
     local model

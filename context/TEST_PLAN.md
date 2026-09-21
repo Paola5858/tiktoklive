@@ -8,7 +8,9 @@
 
 **Fase 3 — Event Engine completo, 139 testes unitários e 2 testes de carga passando**. Implementado o pipeline `receive → deduplicate → aggregate → priority_queue (WRR) → dispatch`. Inclui `PriorityQueueSet` (5 filas independentes + express lane), `DeduplicationCache` (LRU + TTL), `EventAggregator` (janela temporal, exclusão de gifts/P0), e `EventProcessor` (pool de workers e backpressure). Foram adicionados testes de carga em `src/tests/load/` simulando floods de comentários (validação de aggregation) e contenção rigorosa com consumer lento (garantia de drop P4 e sobrevivência P1). Todos os testes passando em Python 3.10 local.
 
-Tudo o resto abaixo (API local, Roblox Bridge e integração ponta a ponta) **ainda não foi implementado** — depende das fases seguintes. Este plano define o que precisa ser provado antes de considerar o sistema funcional. Resultados devem registrar ambiente, versão, dados usados e evidências — nenhum resultado deve ser inventado.
+**Fase 4 — Roblox Bridge (Local API + buffer + consumidor Luau), 28 testes novos, 169 no total (fase 1-4 combinadas)**. `src/tests/unit/test_roblox_bridge.py` cobre tradução `Event`/`AggregatedEvent` → `GameEventEnvelope`, buffer bounded com cursor, eviction FIFO, detecção de gap, ack sem regressão. `src/tests/unit/test_local_api.py` cobre os três endpoints via `fastapi.testclient.TestClient` (sem servidor real): health sem payload de evento, `/events` com `since`/`limit` válidos e inválidos (422 em query malformada), `/ack` com corpo válido/inválido, rota desconhecida (404). Executados em `Python 3.12.3`, `fastapi 0.141.1`, `uvicorn 0.53.0`, `httpx 0.28.1` — `169 passed`. **Nenhum teste manual real em Roblox Studio foi executado** (este agente não tem acesso a Roblox Studio) — ver `manual_studio_test` abaixo e `context/ROBLOX_BRIDGE.md`. `roblox/src/BridgeClient.lua` não tem suíte de testes própria porque não há runtime Luau disponível neste ambiente para rodá-la; a validação desse lado é manual, por design desta fase.
+
+Tudo o resto abaixo (integração ponta a ponta TikTok→Engine→Roblox, Gift Mapping Engine, avatar, OBS) **ainda não foi implementado** — depende das fases seguintes. Este plano define o que precisa ser provado antes de considerar o sistema funcional. Resultados devem registrar ambiente, versão, dados usados e evidências — nenhum resultado deve ser inventado.
 
 **Princípio:** cada camada testável isolada. Nada passa pra fase seguinte sem a fundação da fase anterior validada.
 
@@ -99,11 +101,11 @@ Cobrir obrigatoriamente:
 
 ## o que precisa ser validado experimentalmente antes de virar premissa
 
-- **HttpService alcança `localhost` a partir de Studio (Play Solo/Team Test)?** — testar com um endpoint simples antes de desenhar o bridge inteiro em cima dessa premissa.
-- **HttpService alcança `localhost` a partir de um jogo publicado?** — hipótese forte é que não (server publicado roda na infra da Roblox, não na máquina do creator), mas precisa de teste real, não suposição.
-- **Limite de 500 req/min por server do HttpService** é suficiente pro polling interval planejado? Calcular com o intervalo real que o bridge vai usar.
-- **Throughput real de uma live média/grande** — comentários e gifts por segundo em cenário real, pra calibrar tamanho da fila e cooldowns (os números do brief são hipotéticos).
-- **Latência ponta a ponta** (TikTok → Roblox executando) em condição normal e sob flood.
+- **HttpService alcança `localhost` a partir de Studio (Play Solo/Team Test)?** — **parcialmente respondido na fase 4** por documentação oficial (exemplo atual da Roblox conectando a um servidor local via `CreateWebStreamClient`), mas **ainda sem teste manual real** feito por alguém com acesso a Roblox Studio. Ver `context/ROBLOX_BRIDGE.md`.
+- **HttpService alcança `localhost` a partir de um jogo publicado?** — **respondido (estrutural, não precisa de teste)**: o servidor publicado roda na infraestrutura da Roblox, uma máquina diferente da do creator — `localhost` nesse contexto nunca aponta pro computador do creator. Ver `context/ROBLOX_BRIDGE.md`.
+- **Limite de 500 req/min por server do HttpService** — **confirmado na documentação oficial atual** (fase 4). Com `POLL_INTERVAL_SECONDS = 2` do `BridgeClient.lua`, o consumo é de ~30 req/min pra `/events` + ~30 pra `/ack`, bem abaixo do limite — mas isso não foi testado contra uma live real com throughput variável.
+- **Throughput real de uma live média/grande** — comentários e gifts por segundo em cenário real, pra calibrar tamanho da fila e cooldowns (os números do brief são hipotéticos). Ainda não medido.
+- **Latência ponta a ponta** (TikTok → Roblox executando) em condição normal e sob flood. Ainda não medido — depende da composição end-to-end (`app.py`, ver `DECISIONS.md`) que ainda não existe.
 
 ---
 

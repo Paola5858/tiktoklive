@@ -18,9 +18,9 @@ A biblioteca é um projeto de engenharia reversa, declara licença Modified AGPL
 
 O projeto usa `tiktoklive-engine` como nome de distribuição no `pyproject.toml`, porque o nome normalizado `tiktoklive` colide com a distribuição externa `TikTokLive` no resolvedor do Python. Os imports internos continuam em `src.*`.
 
-## EM ABERTO — FastAPI vs Flask pra API local
+## RESOLVIDA — FastAPI + Uvicorn pra API local (fase 4)
 
-Tendência: FastAPI, por causa de async nativo (bate melhor com asyncio do resto do engine) e validação de payload via Pydantic (ajuda direto em `local_api_security`). Decisão final só depois de confirmar que não tem atrito com a lib de ingestão escolhida.
+Confirmado sem atrito com `TikTokLive` (ambos usam `httpx`/`websockets`, sem conflito de versão observado). FastAPI roda no mesmo loop asyncio do Event Engine — uma API sync (Flask puro) exigiria thread separada ou bloquearia o loop. Validação de request via Pydantic cobre `payload_validation`/`local_api_security` sem reinventar. `fastapi>=0.115,<1.0` e `uvicorn>=0.30,<1.0` adicionados a `pyproject.toml`; versões instaladas e verificadas nesta fase: `fastapi 0.141.1`, `uvicorn 0.53.0`.
 
 ## EM ABERTO — onde mora a Gift Mapping Engine
 
@@ -30,9 +30,14 @@ Ver `ARCHITECTURE.md`, seção "decisão pendente". Impacta workflow do creator,
 
 Como (e se) o sistema associa uma conta do TikTok a um usuário/avatar do Roblox. Sem isso definido, o campo `user_id` do evento pós-engine fica sem contrato real.
 
-## EM ABERTO — localhost em Roblox Studio vs jogo publicado
+## PARCIALMENTE RESOLVIDA — localhost em Roblox Studio vs jogo publicado (fase 4)
 
-Risco #1 do `PROJECT_SPEC.md`. Decisão de arquitetura (ex: "v1 é Studio-only" vs "v1 precisa de túnel/proxy público") depende do resultado do teste experimental (`TEST_PLAN.md`, fase 3). Não tratar como resolvido até validar. Studio e publicado podem ter restrições diferentes — evidência necessária: experimento nos dois ambientes.
+Risco #1 do `PROJECT_SPEC.md`. Verificado contra a documentação oficial atual da Roblox (não apenas suposição):
+
+- **Studio (Play Solo/Team Test)**: o servidor da experiência roda na máquina de quem testa. A documentação oficial de `HttpService` traz um exemplo de código atual conectando a `http://localhost:11434` (um servidor Ollama local) — evidência de que `localhost` pode funcionar em Studio. Relatos mais antigos de erro (`Trust check failed`) parecem ligados à forma da URL (IP puro sem protocolo), não a um bloqueio universal.
+- **Experiência publicada**: o servidor roda na infraestrutura da Roblox — uma máquina diferente da do creator. `localhost` nunca alcança a máquina do creator nesse cenário; isso não depende de configuração, é estrutural.
+- Decisão de arquitetura: **v1 usa `localhost` como default de desenvolvimento em Studio**; qualquer uso além disso (compartilhar teste, publicar) exige expor a Local API via túnel HTTPS (ngrok, Cloudflare Tunnel, etc.) — documentado em `ROBLOX_BRIDGE.md`.
+- Ainda **PARCIAL** porque nenhum teste manual real dentro do Roblox Studio foi executado por este agente (sem acesso a Roblox Studio) — ver `TEST_PLAN.md`, `manual_studio_test`. A parte "publicado nunca alcança localhost" é estrutural e não depende de teste; a parte "localhost funciona em Studio" depende de confirmação manual da Paola.
 
 ## EM ABERTO — implementação da priority queue
 
@@ -125,6 +130,32 @@ Agregação: `EventAggregator` colapsa floods num `AggregatedEvent` (`count >= 2
 ## DECIDIDO — Dispatcher com Consumers isolados via Protocol (fase 3)
 
 O envio de eventos para consumidores (como o futuro Roblox Bridge) não ocorre via herança nem acoplamento forte. O `Dispatcher` aceita qualquer objeto que implemente o `EventConsumer` Protocol (duck typing). Falha em um consumidor não afeta outros nem trava a fila principal. O Roblox Bridge será apenas mais um consumer registrado na Fase 4.
+
+---
+
+## DECIDIDO — semântica de entrega at-least-once com idempotência (fase 4)
+
+Escolhida em vez de tentar exactly-once (que a spec da fase 4 proíbe prometer sem prova) ou at-most-once (que perderia eventos em qualquer falha de rede). `RobloxBridge` nunca regenera `event_id`; `GET /events` nunca remove do buffer; o lado Roblox mantém cache de dedupe bounded. Ver `ROBLOX_BRIDGE.md`.
+
+## DECIDIDO — cursor-based consumption em vez de lease/ack obrigatório (fase 4)
+
+Único consumidor (um Roblox Studio local) nesta fase — um modelo de lease/distribuição multi-consumidor seria complexidade sem uso real (`anti_overengineering`). `POST /ack` existe só para observabilidade (saber o atraso do Roblox), não controla o que é retido no buffer.
+
+## DECIDIDO — buffer em memória bounded (deque), sem persistência (fase 4)
+
+Mesma lógica do "sem banco de dados na v1": não há requisito real de sobreviver a um restart do processo Python ainda. Overflow descarta o mais antigo (FIFO) e incrementa `events_evicted_total`, nunca cresce sem limite.
+
+## DECIDIDO — `RobloxBridge` como `EventConsumer`, não como novo caminho de fila (fase 4)
+
+O bridge se registra no `Dispatcher` já existente da fase 3 (`EventConsumer` Protocol) em vez de o Event Engine ganhar um segundo mecanismo de entrega. Mantém a garantia de "Roblox é só mais um consumer" estabelecida em `DECIDIDO — Dispatcher com Consumers isolados` (fase 3).
+
+## EM ABERTO — `app.py` de composição da aplicação
+
+`RobloxBridge`/`local_api` (fase 4) e `TikTokLiveConnector`/`EventProcessor` (fases 2-3) ainda não estão fisicamente ligados num processo único rodando de ponta a ponta. Isso é composição — decidir como o processo principal inicia TikTok + engine + bridge + API juntos, com shutdown coordenado entre os quatro. Não implementado ainda porque não era escopo de nenhuma fase até agora; vira bloqueio real assim que alguém quiser rodar o sistema completo pela primeira vez.
+
+## EM ABERTO — o que fazer quando `gap_detected` é true
+
+`RobloxBridge.get_events_since` já sinaliza quando eventos foram descartados por overflow antes do Roblox consumir. `BridgeClient.lua` hoje só loga um aviso. Decidir uma política real (pular e seguir, alertar o creator na tela, pedir replay de alguma fonte) depende de dados de quão frequente isso é numa live real — não decidir isso agora por suposição.
 
 ---
 

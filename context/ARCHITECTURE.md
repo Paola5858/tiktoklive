@@ -2,7 +2,7 @@
 
 ## estado atual
 
-A fundação de domínio e o primeiro connector real de TikTok já existem. O connector usa `TikTokLive 7.0.1`, mas a fila do Event Engine, a API local, o bridge Roblox e a observabilidade operacional completa ainda não foram implementados.
+Domínio, connector de TikTok (`TikTokLive 7.0.1`), Event Engine (fila com prioridade, dedupe, agregação, dispatcher) e agora o Roblox Bridge (Local API + buffer + consumidor Luau) existem e têm testes automatizados passando. Ver `context/ROBLOX_BRIDGE.md` para o contrato completo da fase 4. **Ainda não existe** composição end-to-end (`app.py` ligando TikTok + engine + bridge num processo só), Gift Mapping Engine, avatar real, nem OBS.
 
 ---
 
@@ -92,14 +92,17 @@ Evento no schema interno padronizado (ver `EVENT_SCHEMA.md`). A partir daqui, na
 ### EVENT_ENGINE → QUEUE
 Mesmo schema interno, já com `priority` resolvida e `status` inicial definido. Eventos descartados aqui (dedupe, cooldown) não entram na fila — mas ficam registrados no log JSONL pra debug.
 
-### QUEUE → LOCAL_API
-A API local expõe um endpoint de leitura (pull, não push) pro Roblox. Contrato mínimo: `GET /events?since=<cursor>&limit=<n>` retornando lista de eventos prontos pra execução, mais um `GET /health` separado (health check não expõe nem aceita payload de evento).
+### QUEUE → EVENT_ENGINE_DISPATCH → ROBLOXBRIDGE (implementado, fase 4)
+O `Dispatcher` (fase 3) despacha cada `Event`/`AggregatedEvent` processado pra todo `EventConsumer` registrado. `RobloxBridge` (`src/adapters/roblox.py`) é um desses consumers: traduz o evento num `GameEventEnvelope` (schema_version 1.0) e guarda num buffer bounded em memória (deque com eviction FIFO), atribuindo um `sequence_number` monotônico.
 
-### LOCAL_API → ROBLOX_BRIDGE
-JSON puro via HTTP. O bridge em Luau faz polling nesse endpoint respeitando o limite de requests do HttpService (ver risco #2 em `PROJECT_SPEC.md`).
+### ROBLOXBRIDGE → LOCAL_API (implementado, fase 4)
+A Local API (`src/adapters/local_api.py`, FastAPI) expõe o buffer do bridge: `GET /events?since=<cursor>&limit=<n>` (pull, cursor-based, nunca remove do buffer), `POST /ack` (observabilidade, não controla retenção) e `GET /health` (não expõe nem aceita payload de evento).
 
-### ROBLOX_BRIDGE → GAME_ENGINE
-Tradução de `event` (string) pra função Luau correspondente — nunca `if event == "gift_rose" then`. O mapping de gift pra efeito de jogo mora fora do código de execução (Gift Mapping Engine configurável).
+### LOCAL_API → BRIDGECLIENT.LUA (implementado, fase 4)
+JSON puro via HTTP. `roblox/src/BridgeClient.lua` faz polling com `HttpService:RequestAsync`, backoff exponencial em falha, dedupe por `event_id` e rejeição segura de `schema_version` desconhecida. Ver `context/ROBLOX_BRIDGE.md` pra o achado sobre localhost em Studio vs experiência publicada e os limites reais do HttpService (500 req/min, portas bloqueadas abaixo de 1024).
+
+### BRIDGECLIENT.LUA → GAME_ENGINE (esqueleto nesta fase, gameplay real é fase 5)
+`GameEventRouter` dentro de `BridgeClient.lua` já separa recebimento de HTTP da execução de gameplay — handlers são registrados por `event_type`, nunca um `if/elseif` gigante. Os handlers de verdade (spawn, efeito por gift) são fase 5, quando o Gift Mapping Engine existir.
 
 ---
 
@@ -122,7 +125,7 @@ Os valores abaixo são apenas baseline para experimento: comentários até 60 se
 
 ## riscos principais
 
-- **Integração:** biblioteca TikTok, limites do Roblox HttpService e alcance de localhost podem divergir entre Studio e produção.
+- **Integração:** confirmado (fase 4, via documentação oficial) que `localhost` pode funcionar em Studio (servidor roda na máquina do creator) mas nunca alcança o creator numa experiência publicada (servidor roda na nuvem da Roblox) — ver `ROBLOX_BRIDGE.md`. Falta validação manual real em Studio.
 - **Performance:** flood de comentários pode superar o consumidor; fila infinita apenas esconde o problema.
 - **Confiabilidade:** reconexão agressiva pode causar loops, duplicatas e carga desnecessária.
 - **Memória:** entidades e cache de avatar podem se acumular em lives longas.
@@ -132,47 +135,48 @@ Os valores abaixo são apenas baseline para experimento: comentários até 60 se
 
 ---
 
-## estrutura de diretórios proposta
+## estrutura de diretórios (atualizada — o que existe de verdade após a fase 4)
 
 ```
 src/
-  app.py                 # composição da aplicação e ciclo de vida
-  config.py              # configuração validada, sem segredos hardcoded
+  app.py                 # AINDA NÃO EXISTE — composição/ciclo de vida (ver DECISIONS.md)
+  config.py              # implementado (fase 1) — Settings via variável de ambiente
+  errors.py              # implementado (fase 1)
+  logging.py             # implementado (fase 1)
   domain/
-    events.py            # tipos e invariantes do evento interno
-    commands.py          # comandos abstratos para consumidores
-    policies.py          # prioridade, dedupe, cooldown, overflow
+    events.py            # implementado — Event, AggregatedEvent, EventUser, EventType/Status
+    commands.py          # implementado — Command, CommandType (gameplay real é fase 5)
+    priorities.py        # implementado — Priority, DEFAULT_PRIORITY_BY_EVENT_TYPE
+    errors.py             # implementado
   ingestion/
-    base.py              # estados e métricas da source
-    buffer.py            # fronteira bounded entre callback e consumidor
-    normalizer.py        # objetos TikTokLive → Event
-    tiktok.py            # lifecycle, listeners, reconnect e shutdown
+    base.py               # implementado (fase 2)
+    buffer.py              # implementado (fase 2)
+    normalizer.py           # implementado (fase 2) — TikTokLive → Event
+    tiktok.py                # implementado (fase 2) — lifecycle, reconnect, shutdown
   engine/
-    normalizer.py
-    processor.py
-    queue.py
-    aggregator.py
+    queue.py                  # implementado (fase 3) — PriorityQueueSet, WRR
+    dedup.py                   # implementado (fase 3)
+    aggregator.py                # implementado (fase 3)
+    dispatcher.py                 # implementado (fase 3) — EventConsumer Protocol
+    processor.py                   # implementado (fase 3) — orquestrador do pipeline
+    config.py                       # implementado (fase 3) — EngineConfig
+    metrics.py                       # implementado (fase 3)
   adapters/
-    local_api.py
-    roblox.py
-    obs.py
-  observability/
-    metrics.py
-    recording.py
-    health.py
-  security/
-    validation.py
+    roblox.py                        # implementado (fase 4) — RobloxBridge, GameEventEnvelope
+    local_api.py                      # implementado (fase 4) — FastAPI: /health /events /ack
+    obs.py                             # AINDA NÃO EXISTE
   tests/
-    unit/
-    integration/
-    failure/
-    load/
+    unit/                              # implementado — domínio, engine, adapters
+    load/                               # implementado (fase 3)
+    integration/                         # AINDA NÃO EXISTE
+    failure/                              # AINDA NÃO EXISTE como pasta própria (casos cobertos em unit/)
 roblox/
-  src/                   # scripts Luau e módulos do jogo
+  src/
+    BridgeClient.lua                       # implementado (fase 4) — polling, backoff, dedupe, router-esqueleto
 configs/
-  gift-mappings.example.yaml
-events/                  # logs JSONL por dia
-context/                 # documentação de contexto do projeto
+  gift-mappings.example.yaml                 # AINDA NÃO EXISTE — decisão de onde mora o Gift Mapping Engine em aberto
+events/                                       # AINDA NÃO EXISTE — log JSONL por dia
+context/                                       # PROJECT_SPEC, ARCHITECTURE, EVENT_SCHEMA, DECISIONS, TEST_PLAN, ROBLOX_BRIDGE
 ```
 
-A estrutura pode ser ajustada ao stack escolhido. Ela não justifica adicionar frameworks antes de um protótipo mínimo.
+A estrutura foi ajustada conforme cada fase precisou de verdade — nenhuma pasta acima foi criada só pra parecer completa antes de ter conteúdo real.

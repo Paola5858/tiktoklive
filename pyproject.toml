@@ -5,12 +5,15 @@ description = "Event engine que transforma eventos de uma live do TikTok em even
 requires-python = ">=3.10"
 dependencies = [
     "TikTokLive==7.0.1",
+    "fastapi>=0.115,<1.0",
+    "uvicorn>=0.30,<1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "httpx>=0.27",
 ]
 
 [tool.pytest.ini_options]

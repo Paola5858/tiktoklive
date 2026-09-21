@@ -73,9 +73,19 @@ A prioridade é atribuída pelo EVENT_ENGINE, nunca pelo Roblox. O Roblox recebe
 
 ---
 
-## comando abstrato para o Roblox (pós EVENT_ENGINE)
+## comando abstrato para o Roblox (pós EVENT_ENGINE) — formato-alvo, fase 5
 
-Esse é o formato que efetivamente atravessa a LOCAL_API até o Roblox — já traduzido, sem vestígio da origem:
+**Nota (fase 4):** o que atravessa a Local API HOJE não é este formato — é o
+`GameEventEnvelope` implementado em `src/adapters/roblox.py` e documentado
+em `context/ROBLOX_BRIDGE.md` (schema_version "1.0" também, mas com campos
+diferentes: `sequence_number`, `event_type` ainda como `EventType`/`"AGGREGATED"`
+do domínio, sem `command_type`/`parameters` de gameplay). Este `Command`
+abaixo é o formato-alvo de quando o Gift Mapping Engine (fase 5) existir e
+decidir a tradução gift → efeito. `src/domain/commands.py` já define o
+dataclass `Command`/`CommandType` pra esse futuro, mas nada ainda o
+constrói de verdade.
+
+Esse é o formato que deve atravessar a LOCAL_API até o Roblox quando essa tradução existir — já traduzido, sem vestígio da origem:
 
 ```json
 {

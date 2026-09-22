@@ -162,3 +162,14 @@ Cada cenário deve possuir seed ou fixture determinística quando possível. Dad
 6. **Rate Limiting:** Disparos respeitam o intervalo mínimo calculado a partir de `MQTT_PUBLISH_RATE_LIMIT`.
 7. **Telemetria Inbound:** Recepção assíncrona de heartbeats (`device_heartbeat_total`, `is_device_online`) e rejeições locais de firmware (`device_command_rejected_total`).
 8. **Stress / Flood:** Rajadas de 1.000 eventos mistos com broker indisponível não causam estouro de memória, bloqueio de loop ou vazamento de estado.
+
+### Fase 11: Empacotamento, configuração, CLI e experiência de execução
+
+- `test_phase11_cli.py` cobre defaults de simulation, ausência de TikTok sem modo live, ranges de porta, feature flags inválidas, parsing dos comandos e emissão de GameEvents em dry-run.
+- A suíte completa terminou com **307 passed, 1 skipped** no Python 3.12/Linux. O skip é o teste OBS real quando o Studio não está disponível.
+- `pip install -e '.[dev]'` foi executado no venv existente após a inclusão do `build-system` e do entrypoint `liveengine`; `pip check` não encontrou conflitos.
+- Uma instalação em venv limpo separado também executou `liveengine version` e `liveengine simulate --count 3 --dry-run` com sucesso.
+- `liveengine version` e `liveengine simulate --count 5 --dry-run` foram executados com sucesso.
+- Smoke real `start → GET /health → status → stop` passou em modo simulation com porta temporária e removeu o PID file.
+- `liveengine check` sem `TIKTOK_UNIQUE_ID` falhou com exit code 2 e mensagem acionável, como esperado no modo live.
+- A suíte completa deve ser executada novamente antes de cada publicação. Compatibilidade efetivamente demonstrada nesta fase: Python 3.12/Linux. OBS, MQTT, LIVE real e Roblox Studio continuam testes externos separados.

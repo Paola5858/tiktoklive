@@ -1,116 +1,135 @@
-# tiktoklive
+# TikTok × Roblox Live Engine
 
-event engine que transforma eventos de uma live do TikTok em eventos interativos no Roblox (spawn de avatar, efeitos, etc), com fila, prioridade e observabilidade — sem o Roblox nunca precisar entender a estrutura interna do TikTok.
+Aplicação local que recebe eventos de uma LIVE do TikTok, normaliza, prioriza, limita e transforma regras aprovadas em comandos para Roblox, OBS e dispositivos MQTT opcionais. O Roblox não interpreta TikTok. Ele recebe comandos abstratos.
 
-## status atual: fase 9 - Integração MQTT + ESP32/IoT
+## Status
 
-Domínio, connector de TikTok (`TikTokLive==7.0.1`), Event Engine, Roblox Bridge/Local API, Rule Engine, Observabilidade, OBS Integration e MQTT Adapter existem. A fase 9 adiciona o `MQTTAdapter` desacoplado para atuação física e telemetria com dispositivos ESP32 e atuadores seguros de baixa potência via brokers MQTT (Mosquitto/EMQX) utilizando `aiomqtt` e `paho-mqtt`.
+A composição end-to-end existe em `src/app.py`. A fase 11 consolida o pacote instalável, a CLI `liveengine`, configuração centralizada, feature flags, diagnóstico, PID file, modos de simulação e documentação de execução. OBS e MQTT continuam opcionais e desligados por padrão.
 
-A fase 8 conecta o `OBSAdapter` como `EventConsumer` no `Dispatcher`: automação de cenas e overlays.
-A fase 9 conecta o `MQTTAdapter` aos `bridges` de saída do `InteractionConsumer`: `GameEvents` aprovados pelo Rule Engine são roteados para tópicos versionados de comando com TTL, prioridade e rate limiting, enquanto heartbeats e telemetria dos microcontroladores são consumidos assincronamente. Ver `context/MQTT_INTEGRATION.md`.
+A integração `TikTokLive==7.0.1` é um projeto de engenharia reversa com licença Modified AGPL-3.0. O uso previsto é local e a versão permanece pinada para impedir mudanças silenciosas no contrato.
 
-**Ainda não tem**: composição end-to-end num processo só (`app.py`), combos complexos e ranking econômico de gifts.
+## Pré-requisitos
 
-A biblioteca de TikTok é um projeto de engenharia reversa e declara Modified AGPL-3.0. Nesta fase ela é usada localmente e a versão está pinada para que mudanças upstream não alterem silenciosamente o contrato.
+O ambiente validado nesta fase é Linux com Python 3.12. Node não é necessário para o engine. OBS Studio 28+ e um broker MQTT são necessários somente quando suas respectivas features forem habilitadas. Roblox Studio é necessário para validar o consumidor Luau e deve usar HttpService habilitado. A aplicação não instala nem inicia essas ferramentas externas por conta própria.
 
-## documentação de contexto
+Python 3.10+ é aceito pelo metadata do pacote; Python 3.12 foi o ambiente efetivamente testado. A biblioteca TikTok exige conectividade e uma LIVE disponível apenas no modo `live`.
 
-- [`context/PROJECT_SPEC.md`](context/PROJECT_SPEC.md) — escopo, objetivo, riscos
-- [`context/ARCHITECTURE.md`](context/ARCHITECTURE.md) — pipeline, contratos, estrutura de pastas
-- [`context/EVENT_SCHEMA.md`](context/EVENT_SCHEMA.md) — schema do evento interno e do comando
-- [`context/DECISIONS.md`](context/DECISIONS.md) — decisões arquiteturais registradas
-- [`context/TEST_PLAN.md`](context/TEST_PLAN.md) — plano de testes por fase
-- [`context/ROBLOX_BRIDGE.md`](context/ROBLOX_BRIDGE.md) — a ponte Python ↔ Roblox: contrato, polling, idempotência, o que se sabe sobre localhost
-- [`context/INTERACTION_RULES.md`](context/INTERACTION_RULES.md) — regras declarativas, gifts, actions, cooldown, dedupe, rate limit e agregação
-- [`context/OBS_INTEGRATION.md`](context/OBS_INTEGRATION.md) — integração com OBS Studio: protocol websocket 5.x, allowlists, prioridade e resiliência
-- [`context/MQTT_INTEGRATION.md`](context/MQTT_INTEGRATION.md) — integração MQTT e ESP32: contratos, tópicos, QoS, rate limiting, telemetria e segurança física
+## Instalação reproduzível
 
-## setup
-
-requer python 3.11 ou superior.
+A partir da raiz do clone:
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
-pip install '.[dev]'
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -e '.[dev]'
 cp .env.example .env
 ```
 
-**Nota de honestidade sobre `pip install -e '.[dev]'`:** o projeto ainda não
-tem `[tool.setuptools]`/`[tool.hatch.build]` configurado, então mesmo um
-install editable não deixa `src` importável fora do repositório — os
-testes e scripts funcionam a partir da raiz do repo por causa de
-`pythonpath = ["."]` no `pyproject.toml`, não por causa do install. Rode os
-comandos abaixo sempre a partir da raiz do repositório. Empacotamento de
-verdade fica pra fase 8 (Packaging).
+O comando `pip install -e` agora usa o `build-system` oficial e registra a CLI `liveengine`. O `.env` é local, ignorado pelo Git e nunca deve conter valores que sejam colados em issues ou logs.
 
-## rodando os testes
+## Configuração
 
-```bash
-pytest
-```
+Existe uma única estratégia oficial: variáveis de ambiente, normalmente carregadas de `.env`. O arquivo `.env.example` documenta todas as variáveis por categoria: execução, flags, TikTok, Event Engine, Local API/Roblox, OBS, MQTT e paths.
 
-Todos os testes atuais rodam sem internet e sem Roblox: domínio, normalização e lifecycle do connector com client externo simulado, Event Engine, e a Roblox Bridge/Local API via `fastapi.testclient.TestClient` (ASGI em memória, sem servidor real).
+As configurações são tipadas e validadas antes de iniciar processamento. Portas aceitam somente 1–65535, limites precisam ser positivos, thresholds ficam entre 0 e 1, URLs/hosts não são aceitos silenciosamente como vazios e uma feature habilitada exige seus dados mínimos. Senhas de OBS e MQTT só entram pelo ambiente e não aparecem no diagnóstico normal.
 
-## observando uma live (fase 2)
+As flags principais são `FEATURE_TIKTOK`, `FEATURE_ROBLOX`, `FEATURE_OBS`, `FEATURE_MQTT`, `FEATURE_EVENT_RECORDING` e `FEATURE_DEBUG_LOGGING`. OBS e MQTT desligados não impedem o core de iniciar. `RUN_MODE` aceita `live`, `simulation` e `replay`; `simulation` não exige `TIKTOK_UNIQUE_ID`.
+
+## CLI oficial
+
+Depois da instalação:
 
 ```bash
-python -m src.tiktok_probe @username_da_live
+liveengine version
+liveengine check
+liveengine config validate
+liveengine status
+liveengine start
+liveengine stop
+liveengine simulate --count 20 --dry-run
 ```
 
-O probe registra apenas o tipo, o identificador externo quando disponível e o nome exibido. Ctrl+C executa o shutdown do connector. Uma LIVE real ainda precisa ser validada manualmente.
+Também é possível usar `python -m src.cli` se o entrypoint ainda não estiver no `PATH`.
 
-## testando o Roblox Bridge manualmente
+`check` valida Python, configuração, arquivo de regras, porta da Local API e dependências opcionais. O comando retorna exit code `0` quando tudo está pronto, `1` quando o processo está parado no `status` e `2` para configuração ou pré-requisito inválido. `status` nunca imprime senhas: informa processo, PID, API e estado de health.
+
+`start` inicia uma única instância em background, registra o PID em `logs/liveengine.pid` e direciona saída para `logs/engine.log`. `stop` envia encerramento gracioso. Não há daemon proprietário, serviço de sistema ou instalador gigante escondido.
+
+## Primeiro uso seguro
+
+Para validar sem TikTok, Roblox, OBS ou MQTT:
 
 ```bash
-python -m src.adapters.local_api
+RUN_MODE=simulation FEATURE_TIKTOK=false FEATURE_OBS=false FEATURE_MQTT=false liveengine check
+liveengine simulate --count 20 --dry-run
 ```
 
-Sobe a Local API sozinha em `127.0.0.1:8787` com um bridge vazio, pra testar o polling do `roblox/src/BridgeClient.lua` a partir do Roblox Studio. Ver `context/ROBLOX_BRIDGE.md` pra o passo a passo completo e o que ainda não foi validado (nenhum teste manual real em Studio foi feito até agora).
+O modo simulation cria eventos com `source = simulation`, mistura comentários e gifts fictícios e passa pelo `InteractionRuleEngine`. Com `--dry-run`, os `GameEvents` são impressos e nenhum consumidor externo é chamado. Um gift de exemplo não representa um gift real nem seu valor econômico.
 
-## runtime Roblox
+Para iniciar o fluxo local real, configure `TIKTOK_UNIQUE_ID`, mantenha `RUN_MODE=live` e execute:
 
-Copie os ModuleScripts de `roblox/src` para um container no `ServerScriptService` do Studio, mantendo-os como irmãos de `init.server.lua`. O Script de entrada cria o `LiveRuntime`, inicia o cleanup e deixa o ponto de integração para o Bridge:
-
-```lua
-local ok, reason = runtime:handle(decodedCommand)
+```bash
+liveengine check
+liveengine start
+liveengine status
 ```
 
-Leia `roblox/ROBLOX_RUNTIME.md` e execute o checklist em `roblox/tests/ROBLOX_RUNTIME_TESTS.md`. A aparência real do avatar e a comunicação com a API local não foram executadas nesta máquina, porque o ambiente não possui Roblox Studio.
+A Local API fica, por padrão, em `http://127.0.0.1:8787`. O Roblox Studio faz polling de `/events`; veja `context/ROBLOX_BRIDGE.md` antes de testar. `localhost` no Studio local não equivale a acesso a uma máquina do creator em uma experiência publicada.
 
-## estrutura
+## Startup e shutdown
 
+O startup segue a ordem: carregar `.env`, validar config, configurar logging, criar watchdog/métricas, criar Dispatcher e bridge, carregar regras, iniciar consumers opcionais, iniciar Event Processor, subir Local API e só então iniciar a ingestão TikTok no modo live. A instância só grava o PID depois de os componentes principais terem sido criados.
+
+O shutdown recebe SIGINT/SIGTERM, impede novas entradas, encerra TikTok, drena o que for permitido pelo Event Processor, para OBS/MQTT, encerra a Local API, finaliza auditoria e remove o PID file pertencente ao próprio processo. Buffers continuam efêmeros por decisão da v1.
+
+## Observabilidade e arquivos
+
+`GET /health` expõe o bridge e o snapshot operacional sem senhas. Auditoria JSONL fica em `logs/events/`; o log operacional fica em `logs/engine.log`. O PID e os JSONL são artefatos locais ignorados pelo Git. Métricas de fila, drops, retries, watchdog, OBS e MQTT seguem os contratos em `context/OBSERVABILITY.md` e `context/RELIABILITY.md`.
+
+## Testes
+
+```bash
+.venv/bin/python -m pytest -q
 ```
-src/
-  config.py           # configuração validada via variável de ambiente
-  errors.py           # erros base da aplicação
-  logging.py          # logging estruturado
-  domain/
-    events.py          # Event, AggregatedEvent, EventType, EventStatus, EventUser
-    commands.py         # Command, CommandType — formato-alvo pra quando o Gift Mapping Engine existir
-    priorities.py        # modelo de prioridade (P0-P4)
-    errors.py             # erros de domínio
-  ingestion/
-    base.py                # estados e métricas do connector
-    buffer.py                # buffer bounded
-    normalizer.py             # TikTokLive → Event
-    tiktok.py                  # conexão, listeners, backoff e shutdown
-  engine/
-    queue.py                    # PriorityQueueSet — 5 filas + express lane + WRR
-    dedup.py                     # cache de deduplicação LRU + TTL
-    aggregator.py                 # agregação por janela temporal
-    dispatcher.py                  # EventConsumer Protocol + despacho tolerante a falhas
-    processor.py                    # orquestrador do pipeline (workers, shutdown)
-    config.py                        # EngineConfig
-    metrics.py                        # métricas do engine
-  adapters/
-    roblox.py                          # RobloxBridge — tradução Event → envelope + buffer
-    local_api.py                        # FastAPI: GET /health, GET /events, POST /ack
-  tiktok_probe.py                        # entrypoint local da fase 2
-  tests/unit/                             # testes de domínio, engine e adapters, sem infraestrutura real
-  tests/load/                              # testes de carga (flood de comentários, consumer lento)
-roblox/
-  src/
-    BridgeClient.lua                        # consumidor Luau: polling, backoff, dedupe, router-esqueleto
-context/                                      # memória persistente do projeto (specs, decisões, testes)
+
+Os testes unitários, de carga, falha e integração controlada não exigem uma LIVE, OBS Studio, broker ou Roblox Studio reais. O teste `src/tests/integration/test_obs_live.py` é experimental e deve ser executado apenas quando OBS estiver configurado; ele faz skip quando o serviço não está disponível.
+
+Antes de alegar compatibilidade operacional, ainda é necessário separar evidências de Roblox Studio local, OBS real e uma LIVE TikTok real. Os números de carga sintética não são uma promessa de throughput de uma LIVE.
+
+## Troubleshooting
+
+| Sintoma | Causa provável | Como verificar | Como corrigir |
+|---|---|---|---|
+| `TIKTOK_UNIQUE_ID` obrigatório | modo live com TikTok habilitado | `liveengine check` | preencha o ID sem ou com `@`, ou use `RUN_MODE=simulation` |
+| porta 8787 ocupada | outra API/processo local | `liveengine status` e `ss -ltnp` | pare o processo ou altere `LOCAL_API_PORT` |
+| processo já em execução | PID file de uma instância ativa | `liveengine status` | use `liveengine stop`; remova PID somente se o processo não existir |
+| OBS offline | `OBS_ENABLED` ou `FEATURE_OBS` habilitado sem OBS em 4455 | `liveengine check`, `OBS_PORT` | inicie OBS com obs-websocket ou desligue a feature |
+| MQTT não conecta | broker ausente, host/porta/TLS incorretos | logs e `MQTT_BROKER_HOST` | inicie/configure o broker ou mantenha MQTT desabilitado |
+| Roblox não recebe eventos | Studio sem HttpService, URL/porta errada ou buffer evicto | `GET /health`, logs e `gap_detected` | habilite HttpService, use a URL local correta e ajuste polling/buffer |
+| regras não carregam | JSON inválido, schema incompatível ou action não allowlisted | `liveengine config validate` | corrija `configs/interaction_rules.json` |
+| logs não aparecem | diretório sem permissão | `ls -ld logs` | corrija a permissão ou ajuste `AUDIT_LOG_DIR` |
+| fila saturada | consumidor externo lento ou flood | `GET /health` e métricas | reduza ações, ajuste limites com cuidado e aceite drops de baixa prioridade |
+| dependência ausente | venv não instalado ou pacote incompleto | `liveengine check` | recrie o venv e rode `pip install -e '.[dev]'` |
+
+## Estrutura principal
+
+```text
+src/app.py                 composição e lifecycle
+src/cli.py                 CLI oficial
+src/config.py              Settings, flags e parsing centralizado
+src/domain/                eventos, comandos e prioridades
+src/ingestion/             TikTok, normalização e buffers
+src/engine/                fila, dedupe, agregação e dispatcher
+src/interaction/           regras, cooldown, dedupe, GameEvents e consumer
+src/observability/         watchdog, métricas, auditoria e resiliência
+src/adapters/              Roblox Local API, OBS e MQTT
+configs/                   regras e mappings versionados
+roblox/src/                BridgeClient e runtime Luau
+context/                   contratos, decisões, falhas e operação
 ```
+
+## Limitações atuais
+
+A resolução TikTok → usuário Roblox continua explícita e não automática. Combos econômicos, ranking, autenticação pública, publicação cloud, SaaS, billing, instalador complexo e auto-update estão fora da v1. A experiência publicada do Roblox não pode alcançar a Local API do creator via `localhost`. O modo `replay` está reservado no contrato, mas não há gravador/reprodutor completo de eventos nesta fase.
+
+Consulte `context/PROJECT_SPEC.md`, `context/ARCHITECTURE.md`, `context/DECISIONS.md`, `context/TEST_PLAN.md`, `context/RELIABILITY.md`, `context/FAILURE_MODES.md`, `context/OBSERVABILITY.md`, `context/INTERACTION_RULES.md`, `context/OBS_INTEGRATION.md` e `context/MQTT_INTEGRATION.md` para as decisões detalhadas.

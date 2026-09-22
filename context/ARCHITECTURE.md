@@ -2,7 +2,7 @@
 
 ## estado atual
 
-Domínio, connector de TikTok (`TikTokLive 7.0.1`), Event Engine (fila com prioridade, dedupe, agregação, dispatcher), Roblox Bridge (Local API + buffer + consumidor Luau), Rule Engine (Fase 6), Observabilidade (Fase 7), OBS Integration (Fase 8) e MQTT / ESP32 IoT Adapter (Fase 9) existem e têm testes automatizados passando. Ver `context/MQTT_INTEGRATION.md` para a especificação completa do MQTT Adapter. **Ainda não existe** composição end-to-end (`app.py` ligando TikTok + engine + bridge num processo só).
+Domínio, connector de TikTok (`TikTokLive 7.0.1`), Event Engine (fila com prioridade, dedupe, agregação, dispatcher), Roblox Bridge (Local API + buffer + consumidor Luau), Rule Engine (Fase 6), Observabilidade (Fase 7), OBS Integration (Fase 8), MQTT / ESP32 IoT Adapter (Fase 9) e a composição end-to-end (`src/app.py`, fase 11) existem. A execução oficial ocorre pela CLI `liveengine`; OBS e MQTT continuam opcionais.
 
 ---
 
@@ -154,7 +154,8 @@ Os valores abaixo são apenas baseline para experimento: comentários até 60 se
 
 ```
 src/
-  app.py                 # AINDA NÃO EXISTE — composição/ciclo de vida (ver DECISIONS.md)
+  app.py                 # implementado (fase 11) — composição, boot e shutdown
+  cli.py                 # implementado (fase 11) — start/stop/status/check/simulate
   config.py              # implementado (fase 1) — Settings via variável de ambiente
   errors.py              # implementado (fase 1)
   logging.py             # implementado (fase 1)
@@ -179,7 +180,7 @@ src/
 	  adapters/
 	    roblox.py                        # implementado (fase 4) - RobloxBridge, GameEventEnvelope
 	    local_api.py                      # implementado (fase 4) - FastAPI: /health /events /ack
-	    obs.py                             # AINDA NÃO EXISTE
+    obs.py                             # implementado (fase 8) - OBSAdapter
 	    obs.py                             # implementado (fase 8) - OBSAdapter, OBSPriorityQueue, OBSActionValidator
 	  interaction/
 	    models.py                          # implementado (fase 6) - regras, actions e GameEvent

@@ -43,7 +43,9 @@ class AckRequest(BaseModel):
 
 
 def create_app(
-    bridge: RobloxBridge, snapshot: OperationalSnapshot | None = None
+    bridge: RobloxBridge,
+    snapshot: OperationalSnapshot | None = None,
+    capabilities: dict[str, str] | None = None,
 ) -> FastAPI:
     """Monta a aplicação FastAPI em torno de um `RobloxBridge` já existente."""
     app = FastAPI(
@@ -65,9 +67,10 @@ def create_app(
                 "status": status,
                 "bridge": bridge.health_snapshot(),
                 "system": snap,
+                "capabilities": capabilities or {},
             }
 
-        return {"status": "ok", "bridge": bridge.health_snapshot()}
+        return {"status": "ok", "bridge": bridge.health_snapshot(), "capabilities": capabilities or {}}
 
     @app.get("/events")
     async def get_events(

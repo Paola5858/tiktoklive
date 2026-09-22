@@ -10,4 +10,6 @@ build/
 .mypy_cache/
 .ruff_cache/
 events/*.jsonl
+logs/liveengine.pid
+logs/events/*.jsonl
 .DS_Store

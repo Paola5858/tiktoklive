@@ -30,7 +30,7 @@ from src.adapters.local_api import create_app as create_local_api_app
 from src.adapters.mqtt import MQTTAdapter, MQTTConfig
 from src.adapters.obs import OBSAdapter, OBSConfig, load_obs_actions
 from src.adapters.roblox import RobloxBridge, RobloxBridgeConfig
-from src.config import Settings, ConfigurationError
+from src.config import Settings, ConfigurationError, parse_float, parse_float_csv, parse_int
 from src.engine.config import EngineConfig
 from src.engine.dispatcher import Dispatcher
 from src.engine.metrics import EngineMetrics
@@ -67,6 +67,7 @@ class AppConfig:
     obs_actions_path: str = "configs/obs_actions.json"
     audit_log_dir: str = "logs/events"
     shutdown_timeout: float = 10.0
+    pid_file: str = "logs/liveengine.pid"
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "AppConfig":
@@ -75,34 +76,34 @@ class AppConfig:
         settings = Settings.from_env(source)
 
         engine = EngineConfig(
-            queue_capacity_per_level=int(source.get("ENGINE_QUEUE_CAPACITY_PER_LEVEL", "500")),
-            p0_express_capacity=int(source.get("ENGINE_P0_EXPRESS_CAPACITY", "100")),
-            n_workers=int(source.get("ENGINE_N_WORKERS", "4")),
-            max_in_flight=int(source.get("ENGINE_MAX_IN_FLIGHT", "16")),
-            dedup_maxsize=int(source.get("ENGINE_DEDUP_MAXSIZE", "10000")),
-            dedup_ttl_seconds=float(source.get("ENGINE_DEDUP_TTL_SECONDS", "30.0")),
-            aggregation_window_seconds=float(source.get("ENGINE_AGGREGATION_WINDOW_SECONDS", "2.0")),
-            aggregation_max_bucket_size=int(source.get("ENGINE_AGGREGATION_MAX_BUCKET_SIZE", "50")),
-            overflow_threshold_p1=float(source.get("ENGINE_OVERFLOW_THRESHOLD_P1", "0.90")),
-            overflow_threshold_p2=float(source.get("ENGINE_OVERFLOW_THRESHOLD_P2", "0.80")),
-            overflow_threshold_p3=float(source.get("ENGINE_OVERFLOW_THRESHOLD_P3", "0.60")),
-            overflow_threshold_p4=float(source.get("ENGINE_OVERFLOW_THRESHOLD_P4", "0.50")),
-            shutdown_drain_timeout_seconds=float(source.get("ENGINE_SHUTDOWN_DRAIN_TIMEOUT_SECONDS", "5.0")),
-            latency_sample_size=int(source.get("ENGINE_LATENCY_SAMPLE_SIZE", "1000")),
-            log_every_n_drops=int(source.get("ENGINE_LOG_EVERY_N_DROPS", "50")),
+            queue_capacity_per_level=parse_int(source, "ENGINE_QUEUE_CAPACITY_PER_LEVEL", 500, minimum=1),
+            p0_express_capacity=parse_int(source, "ENGINE_P0_EXPRESS_CAPACITY", 100, minimum=0),
+            n_workers=parse_int(source, "ENGINE_N_WORKERS", 4, minimum=1, maximum=64),
+            max_in_flight=parse_int(source, "ENGINE_MAX_IN_FLIGHT", 16, minimum=1, maximum=10_000),
+            dedup_maxsize=parse_int(source, "ENGINE_DEDUP_MAXSIZE", 10_000, minimum=1),
+            dedup_ttl_seconds=parse_float(source, "ENGINE_DEDUP_TTL_SECONDS", 30.0, minimum=0.1),
+            aggregation_window_seconds=parse_float(source, "ENGINE_AGGREGATION_WINDOW_SECONDS", 2.0, minimum=0.1),
+            aggregation_max_bucket_size=parse_int(source, "ENGINE_AGGREGATION_MAX_BUCKET_SIZE", 50, minimum=1),
+            overflow_threshold_p1=parse_float(source, "ENGINE_OVERFLOW_THRESHOLD_P1", 0.90, minimum=0, maximum=1),
+            overflow_threshold_p2=parse_float(source, "ENGINE_OVERFLOW_THRESHOLD_P2", 0.80, minimum=0, maximum=1),
+            overflow_threshold_p3=parse_float(source, "ENGINE_OVERFLOW_THRESHOLD_P3", 0.60, minimum=0, maximum=1),
+            overflow_threshold_p4=parse_float(source, "ENGINE_OVERFLOW_THRESHOLD_P4", 0.50, minimum=0, maximum=1),
+            shutdown_drain_timeout_seconds=parse_float(source, "ENGINE_SHUTDOWN_DRAIN_TIMEOUT_SECONDS", 5.0, minimum=0.1),
+            latency_sample_size=parse_int(source, "ENGINE_LATENCY_SAMPLE_SIZE", 1000, minimum=1),
+            log_every_n_drops=parse_int(source, "ENGINE_LOG_EVERY_N_DROPS", 50, minimum=1),
         )
 
         roblox_bridge = RobloxBridgeConfig(
-            buffer_capacity=int(source.get("ROBLOX_BRIDGE_BUFFER_CAPACITY", "500")),
-            max_events_per_poll=int(source.get("ROBLOX_BRIDGE_MAX_EVENTS_PER_POLL", "100")),
-            default_events_per_poll=int(source.get("ROBLOX_BRIDGE_DEFAULT_EVENTS_PER_POLL", "25")),
+            buffer_capacity=parse_int(source, "ROBLOX_BRIDGE_BUFFER_CAPACITY", 500, minimum=1),
+            max_events_per_poll=parse_int(source, "ROBLOX_BRIDGE_MAX_EVENTS_PER_POLL", 100, minimum=1),
+            default_events_per_poll=parse_int(source, "ROBLOX_BRIDGE_DEFAULT_EVENTS_PER_POLL", 25, minimum=1),
         )
 
         obs = OBSConfig.from_env(source)
         mqtt = MQTTConfig.from_env(source)
 
         tiktok_unique_id = source.get("TIKTOK_UNIQUE_ID", "").strip().lstrip("@")
-        if not tiktok_unique_id:
+        if settings.features.tiktok and settings.mode == "live" and not tiktok_unique_id:
             raise ConfigurationError("TIKTOK_UNIQUE_ID é obrigatório (ex: @usuario ou usuario)")
 
         return cls(
@@ -112,17 +113,16 @@ class AppConfig:
             obs=obs,
             mqtt=mqtt,
             tiktok_unique_id=tiktok_unique_id,
-            tiktok_max_buffer_size=int(source.get("TIKTOK_MAX_BUFFER_SIZE", "1000")),
-            tiktok_max_reconnect_attempts=int(source.get("TIKTOK_MAX_RECONNECT_ATTEMPTS", "5")),
-            tiktok_backoff_delays=tuple(
-                float(x.strip()) for x in source.get("TIKTOK_BACKOFF_DELAYS", "2,4,8,16,30").split(",") if x.strip()
-            ),
+            tiktok_max_buffer_size=parse_int(source, "TIKTOK_MAX_BUFFER_SIZE", 1000, minimum=1),
+            tiktok_max_reconnect_attempts=parse_int(source, "TIKTOK_MAX_RECONNECT_ATTEMPTS", 5, minimum=0),
+            tiktok_backoff_delays=parse_float_csv(source, "TIKTOK_BACKOFF_DELAYS", "2,4,8,16,30"),
             local_api_host=source.get("LOCAL_API_HOST", "127.0.0.1"),
-            local_api_port=int(source.get("LOCAL_API_PORT", "8787")),
+            local_api_port=parse_int(source, "LOCAL_API_PORT", 8787, minimum=1, maximum=65535),
             interaction_rules_path=source.get("INTERACTION_RULES_PATH", "configs/interaction_rules.json"),
             obs_actions_path=source.get("OBS_ACTIONS_PATH", "configs/obs_actions.json"),
             audit_log_dir=source.get("AUDIT_LOG_DIR", "logs/events"),
-            shutdown_timeout=float(source.get("SHUTDOWN_TIMEOUT", "10.0")),
+            shutdown_timeout=parse_float(source, "SHUTDOWN_TIMEOUT", 10.0, minimum=0.1),
+            pid_file=source.get("PID_FILE", "logs/liveengine.pid").strip() or "logs/liveengine.pid",
         )
 
 
@@ -162,10 +162,10 @@ class LiveEngineApp:
             return
 
         LOGGER.info("Iniciando TikTok × Roblox Live Engine...")
-        LOGGER.info("TikTok target: @%s", self._config.tiktok_unique_id)
+        LOGGER.info("Modo: %s", self._config.settings.mode)
+        LOGGER.info("TikTok target: @%s", self._config.tiktok_unique_id or "não configurado")
         LOGGER.info("Local API: http://%s:%d", self._config.local_api_host, self._config.local_api_port)
-        LOGGER.info("OBS: %s", "habilitado" if self._config.obs.enabled else "desabilitado")
-        LOGGER.info("MQTT: %s", "habilitado" if self._config.mqtt.enabled else "desabilitado")
+        LOGGER.info("Features: %s", self._config.settings.features.as_dict())
 
         # 1. Dispatcher (hub de consumers)
         self._dispatcher = Dispatcher(self._engine_metrics)
@@ -187,7 +187,7 @@ class LiveEngineApp:
         self._dispatcher.register(self._interaction_consumer)
 
         # 4. OBS Adapter (opcional)
-        if self._config.obs.enabled:
+        if self._config.settings.features.obs and self._config.obs.enabled:
             obs_actions = load_obs_actions(self._config.obs_actions_path)
             self._obs_adapter = OBSAdapter(
                 config=self._config.obs,
@@ -198,7 +198,7 @@ class LiveEngineApp:
             self._dispatcher.register(self._obs_adapter)
 
         # 5. MQTT Adapter (opcional)
-        if self._config.mqtt.enabled:
+        if self._config.settings.features.mqtt and self._config.mqtt.enabled:
             self._mqtt_adapter = MQTTAdapter(
                 config=self._config.mqtt,
                 watchdog=self._watchdog,
@@ -230,16 +230,18 @@ class LiveEngineApp:
         self._local_api_app = create_local_api_app(
             bridge=self._roblox_bridge,
             snapshot=self._operational_snapshot,
+            capabilities=self.capabilities,
         )
 
         # 9. TikTok Connector
-        self._tiktok_connector = TikTokLiveConnector(
-            unique_id=self._config.tiktok_unique_id,
-            max_buffer_size=self._config.tiktok_max_buffer_size,
-            max_reconnect_attempts=self._config.tiktok_max_reconnect_attempts,
-            backoff_delays=self._config.tiktok_backoff_delays,
-            watchdog=self._watchdog,
-        )
+        if self._config.settings.features.tiktok and self._config.settings.mode == "live":
+            self._tiktok_connector = TikTokLiveConnector(
+                unique_id=self._config.tiktok_unique_id,
+                max_buffer_size=self._config.tiktok_max_buffer_size,
+                max_reconnect_attempts=self._config.tiktok_max_reconnect_attempts,
+                backoff_delays=self._config.tiktok_backoff_delays,
+                watchdog=self._watchdog,
+            )
 
         # Iniciar componentes na ordem correta
         await self._audit_logger.start()
@@ -265,13 +267,17 @@ class LiveEngineApp:
             name="local_api_server",
         )
 
-        # Iniciar consumidor TikTok
-        self._tiktok_consumer_task = asyncio.create_task(
-            self._consume_tiktok_events(),
-            name="tiktok_event_consumer",
-        )
+        # Iniciar consumidor TikTok apenas no modo live.
+        if self._tiktok_connector:
+            self._tiktok_consumer_task = asyncio.create_task(
+                self._consume_tiktok_events(),
+                name="tiktok_event_consumer",
+            )
 
         self._started = True
+        pid_path = Path(self._config.pid_file)
+        pid_path.parent.mkdir(parents=True, exist_ok=True)
+        pid_path.write_text(str(os.getpid()), encoding="utf-8")
         LOGGER.info("Live Engine iniciado com sucesso")
 
     async def _consume_tiktok_events(self) -> None:
@@ -346,11 +352,28 @@ class LiveEngineApp:
         await self._audit_logger.stop()
 
         self._started = False
+        try:
+            pid_path = Path(self._config.pid_file)
+            if pid_path.read_text(encoding="utf-8").strip() == str(os.getpid()):
+                pid_path.unlink(missing_ok=True)
+        except (OSError, ValueError):
+            LOGGER.debug("Não foi possível remover PID file %s", self._config.pid_file)
         LOGGER.info("Shutdown completo")
 
     @property
     def is_running(self) -> bool:
         return self._started and not self._shutdown_event.is_set()
+
+    @property
+    def capabilities(self) -> dict[str, str]:
+        """Estado efetivo, não apenas configuração declarada."""
+        return {
+            "tiktok_ingestion": "ready" if self._tiktok_connector else "disabled",
+            "roblox_bridge": "ready" if self._roblox_bridge else "disabled",
+            "obs_control": "ready" if self._obs_adapter else "disabled",
+            "mqtt_output": "ready" if self._mqtt_adapter else "disabled",
+            "event_recording": "ready" if self._audit_logger else "disabled",
+        }
 
 
 async def _run_app(config: AppConfig) -> None:
@@ -417,7 +440,7 @@ def main() -> None:
     _load_env_file()
     try:
         config = AppConfig.from_env()
-    except ConfigurationError as exc:
+    except (ConfigurationError, ValueError) as exc:
         print(f"Erro de configuração: {exc}", file=sys.stderr)
         sys.exit(1)
 

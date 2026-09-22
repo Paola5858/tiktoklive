@@ -257,3 +257,24 @@ Mensagens publicadas com comandos físicos utilizam explicitamente `retain=False
 ## DECIDIDO — limites físicos rígidos e segurança por design (fase 9)
 
 Atuação física na Fase 9 é limitada estritamente a indicadores visuais de baixa tensão (LEDs, anéis neopixel, matrizes de LED e displays). Qualquer controle de alta tensão, potência térmica ou atuadores mecânicos perigosos é expressamente vedado. Entradas de usuários da Live (comentários ou usernames) nunca determinam nomes de tópicos ou rotinas de baixo nível.
+
+## DECIDIDO — configuração única por ambiente e CLI oficial (fase 11)
+
+A fonte oficial de configuração é o ambiente, carregado opcionalmente de `.env` por `src.app._load_env_file`. `src.config` converte strings em valores tipados, valida ranges e produz `Settings`/`FeatureFlags`; `AppConfig` agrega os contratos específicos de engine, bridge, OBS, MQTT, paths e lifecycle. Não serão mantidos arquivos de configuração concorrentes nem constantes operacionais escondidas em adapters.
+
+## DECIDIDO — `liveengine` como entrypoint local
+
+O pacote registra `liveengine = src.cli:main` no `pyproject.toml`. Os comandos oficiais são `version`, `check`, `config validate`, `status`, `start`, `stop` e `simulate`. `start` usa um PID file bounded e um único processo local; `stop` envia shutdown gracioso. Não foi adicionado service manager, Docker, installer, cloud ou auto-update.
+
+## DECIDIDO — integrações opcionais e capabilities efetivas
+
+TikTok, OBS, MQTT, gravação e Roblox são controlados por feature flags. OBS e MQTT desligados não impedem o core de iniciar. A Local API expõe capabilities efetivas, distinguindo componente criado/pronto de integração apenas configurada. Senhas não aparecem em `/health`, CLI, logs normais ou arquivos gerados.
+
+## DECIDIDO — simulation e dry-run locais
+
+`liveengine simulate` usa eventos determinísticos com `source = simulation`, carrega as regras reais e passa pelo Interaction Rules Engine. `--dry-run` imprime os GameEvents sem publicar no Roblox, OBS ou MQTT. Isso permite validar regras e bursts sem fingir que uma simulação é TikTok real. O modo `replay` fica reservado no contrato, mas ainda não há reprodutor persistente implementado.
+
+## DECIDIDO — packaging mínimo reproduzível
+
+O projeto usa `setuptools` via `pyproject.toml`, mantém dependências diretas declaradas e instala em venv com `pip install -e '.[dev]'`. A compatibilidade efetivamente testada nesta fase é Python 3.12 em Linux; Python 3.10+ permanece requisito declarado, mas não deve ser tratado como validado sem executar a suíte nesse interpretador.
+*** End Patch

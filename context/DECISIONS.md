@@ -220,3 +220,27 @@ Cenas e fontes do OBS só podem ser acionadas se constarem nas allowlists config
 ## DECIDIDO — respeitar override manual do streamer em efeitos temporários (fase 8)
 
 Efeitos visuais temporários (ex: trocar para a cena de celebração por 5 segundos e retornar) verificam a cena atual no OBS antes de restaurar a cena inicial. Se o streamer mudou a cena manualmente no OBS durante o efeito, o efeito cancela a restauração automática para priorizar a decisão manual do streamer.
+
+---
+
+## DECIDIDO — MQTT como consumidor desacoplado do Rule Engine (fase 9)
+
+O `MQTTAdapter` consome `GameEvent` emitidos pelo `InteractionRuleEngine` e despacha para dispositivos físicos (ESP32). Ele opera como um bridge complementar via `InteractionConsumer.bridges`. Uma falha de broker ou conexão nunca interrompe a ingestão do TikTok, a ponte com o Roblox ou as automações de OBS.
+
+## DECIDIDO — aiomqtt (Paho MQTT) para AsyncIO nativo (fase 9)
+
+Utilizou-se `aiomqtt>=2.3.0` sobre `paho-mqtt>=2.1.0`. A comunicação com o broker é totalmente nativa no loop assíncrono do Python, implementando reconexão automática com backoff exponencial controlado (`[2, 4, 8, 16, 30]s`), keepalive e clean session.
+
+## DECIDIDO — separação estrita entre comandos e telemetria (fase 9)
+
+O tráfego MQTT foi estritamente segregado em tópicos com semânticas distintas:
+- Comandos outbound (`liveengine/v1/device/{device_id}/command`) com validação de payload, allowlist e TTL.
+- Telemetria inbound (`liveengine/v1/device/{device_id}/heartbeat` e `/telemetry`) consumida assincronamente para rastrear liveness (`device_last_seen`) e erros de execução reportados pelo firmware.
+
+## DECIDIDO — proibição de mensagens retidas para comandos one-shot (fase 9)
+
+Mensagens publicadas com comandos físicos utilizam explicitamente `retain=False`. Se um ESP32 reconectar após período offline, ele não deve executar cegamente comandos antigos cuja relevância temporal na Live já expirou.
+
+## DECIDIDO — limites físicos rígidos e segurança por design (fase 9)
+
+Atuação física na Fase 9 é limitada estritamente a indicadores visuais de baixa tensão (LEDs, anéis neopixel, matrizes de LED e displays). Qualquer controle de alta tensão, potência térmica ou atuadores mecânicos perigosos é expressamente vedado. Entradas de usuários da Live (comentários ou usernames) nunca determinam nomes de tópicos ou rotinas de baixo nível.

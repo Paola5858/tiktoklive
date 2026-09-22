@@ -141,3 +141,17 @@ Eventos recebidos, normalizados, aceitos, processados, agregados e descartados; 
 ## reprodutibilidade
 
 Cada cenário deve possuir seed ou fixture determinística quando possível. Dados de usuários devem ser fictícios ou minimizados. Testes contra serviços externos devem ser marcados como experimentais e não podem ser usados para esconder a ausência de testes unitários.
+
+---
+
+## testes de MQTT e ESP32 / IoT (Fase 9)
+
+### Casos de Teste Automatizados (`src/tests/unit/test_mqtt_adapter.py`)
+1. **Serialização e Contrato:** Verifica montagem de envelopes com `schema_version="1.0"`, `message_id`, `event_id`, `action_id`, timestamps e payload.
+2. **QoS por Prioridade:** P0 e P1 mapeiam para QoS 1; P2 a P4 mapeiam para QoS 0.
+3. **Evicção e Bounded Backpressure:** Fila prioritária com limites rígidos. Injeção de 3 mensagens P1 em fila de tamanho 2 evicta a mais antiga. Injeção em P4 descarta a nova sem tocar em P0/P1.
+4. **Idempotência / Deduplicação:** Reenvio de mesmo `event_id` dentro do TTL de 30s é coalescido e não enfileira duplicação.
+5. **Segurança e Allowlists:** Payloads que excedem `max_payload_bytes` e requisições para `device_id` ou comandos fora da allowlist são rejeitados e auditados em métricas.
+6. **Rate Limiting:** Disparos respeitam o intervalo mínimo calculado a partir de `MQTT_PUBLISH_RATE_LIMIT`.
+7. **Telemetria Inbound:** Recepção assíncrona de heartbeats (`device_heartbeat_total`, `is_device_online`) e rejeições locais de firmware (`device_command_rejected_total`).
+8. **Stress / Flood:** Rajadas de 1.000 eventos mistos com broker indisponível não causam estouro de memória, bloqueio de loop ou vazamento de estado.

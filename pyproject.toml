@@ -8,6 +8,8 @@ dependencies = [
     "fastapi>=0.115,<1.0",
     "uvicorn>=0.30,<1.0",
     "obsws-python>=1.7,<2.0",
+    "aiomqtt>=2.3.0,<3.0",
+    "paho-mqtt>=2.1.0,<3.0",
 ]
 
 [project.optional-dependencies]

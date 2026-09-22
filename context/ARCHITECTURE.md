@@ -2,8 +2,7 @@
 
 ## estado atual
 
-Domínio, connector de TikTok (`TikTokLive 7.0.1`), Event Engine (fila com prioridade, dedupe, agregação, dispatcher) e agora o Roblox Bridge (Local API + buffer + consumidor Luau) existem e têm testes automatizados passando. Ver `context/ROBLOX_BRIDGE.md` para o contrato completo da fase 4. **Ainda não existe** composição end-to-end (`app.py` ligando TikTok + engine + bridge num processo só), Gift Mapping Engine, avatar real, nem OBS.
-Domínio, connector de TikTok (`TikTokLive 7.0.1`), Event Engine (fila com prioridade, dedupe, agregação, dispatcher), Roblox Bridge (Local API + buffer + consumidor Luau), Rule Engine (Fase 6), Observabilidade (Fase 7) e OBS Integration (Fase 8) existem e têm testes automatizados passando. Ver `context/OBS_INTEGRATION.md` para a especificação do OBS Adapter. **Ainda não existe** composição end-to-end (`app.py` ligando TikTok + engine + bridge num processo só).
+Domínio, connector de TikTok (`TikTokLive 7.0.1`), Event Engine (fila com prioridade, dedupe, agregação, dispatcher), Roblox Bridge (Local API + buffer + consumidor Luau), Rule Engine (Fase 6), Observabilidade (Fase 7), OBS Integration (Fase 8) e MQTT / ESP32 IoT Adapter (Fase 9) existem e têm testes automatizados passando. Ver `context/MQTT_INTEGRATION.md` para a especificação completa do MQTT Adapter. **Ainda não existe** composição end-to-end (`app.py` ligando TikTok + engine + bridge num processo só).
 
 ---
 
@@ -20,27 +19,20 @@ EVENT_ENGINE (classifica, prioriza, dedupe, agrega, decide o que segue)
    ↓
 QUEUE (bounded, priority-aware, com política de overflow)
    ↓
-AGGREGATOR (agrupa quando reduz custo sem destruir a experiência)
-   ↓
-LOCAL_API (expõe fila processada pra quem consome)
-   ↓
-ROBLOX_BRIDGE (Luau consumindo a API local via HttpService)
-   ↓
-GAME_ENGINE (router, avatar, efeito, duração, cleanup)
-   ↓
-OBS_INTEGRATION (reage ao estado da live)
-
-OBSERVABILITY atravessa todas as camadas (métricas + logs + watchdog)
-TikTok Event → Normalizer → Event Engine → Priority Queue
-   → Dispatcher.dispatch(event)
-       ├── InteractionConsumer → InteractionRuleEngine → RobloxBridge
-       └── OBSAdapter.handle(event)                                 [Phase 8]
-               ↓ (non-blocking: enqueue only)
-           OBSPriorityQueue (bounded, priority, dedupe, expiration)
-               ↓ (background worker task)
-           OBSAdapter._worker_task
-               ↓ (run_in_executor → sync obsws-python ReqClient)
-           OBS Studio WebSocket 5.x (port 4455)
+DISPATCHER.dispatch(event)
+   ├── InteractionConsumer → InteractionRuleEngine
+   │     ├── RobloxBridge → Local API → Luau Client
+   │     └── MQTTAdapter.publish_game_event(game_event)              [Phase 9]
+   │             ↓ (non-blocking: queue, rate limit, TTL, dedup)
+   │         MQTT Broker (Mosquitto/EMQX)
+   │             ↓ Topics: liveengine/v1/device/{device_id}/command
+   │         ESP32 Microcontrollers / Safe Physical Actuators
+   │             ↑ Heartbeat & Telemetry (inbound)
+   └── OBSAdapter.handle(event)                                      [Phase 8]
+           ↓ (non-blocking: enqueue only)
+       OBSPriorityQueue (bounded, priority, dedupe, expiration)
+           ↓ (background worker task)
+       OBS Studio WebSocket 5.x (port 4455)
 ```
 
 Cada seta acima é um contrato. O objetivo é que cada camada só precise conhecer o contrato da vizinha, nunca a implementação interna dela.

@@ -158,3 +158,35 @@ Mudanças incompatíveis devem alterar `schema_version` e ser registradas em `DE
 ```
 
 **Regra de privacidade:** registrar só o necessário pra debug/replay. Sem dados sensíveis além do que já é público na live (nome de usuário exibido). O contrato não deve carregar texto integral de comentário, avatar description ou tokens de autenticação por padrão. Se um campo for necessário para depuração, aplicar minimização, retenção definida e redaction nos logs.
+
+---
+
+## contrato de mensagem MQTT / ESP32 (Fase 9)
+
+### comando para dispositivo (`liveengine/v1/device/{device_id}/command`)
+
+```json
+{
+  "schema_version": "1.0",
+  "message_id": "uuid4",
+  "event_id": "se_...",
+  "action_id": "ge_...",
+  "device_id": "esp32_led_01",
+  "command": "PLAY_EFFECT",
+  "timestamp": "2026-09-21T22:15:00.000000Z",
+  "expires_at": "2026-09-21T22:15:30.000000Z",
+  "payload": {
+    "action_type": "PLAY_EFFECT",
+    "target_device_id": "esp32_led_01"
+  }
+}
+```
+
+### telemetria e heartbeat (`liveengine/v1/device/{device_id}/heartbeat`)
+
+```json
+{
+  "status": "OK",
+  "uptime_s": 3600
+}
+```

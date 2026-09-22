@@ -10,24 +10,33 @@ from typing import Any
 
 from src.engine.metrics import EngineMetrics
 from src.observability.health import Watchdog
+from src.observability.resilience import ResilienceMetrics
 
 
 class OperationalSnapshot:
     """Compila e estrutura o snapshot do sistema."""
 
-    def __init__(self, metrics: EngineMetrics, watchdog: Watchdog):
+    def __init__(
+        self,
+        metrics: EngineMetrics,
+        watchdog: Watchdog,
+        resilience: ResilienceMetrics | None = None,
+    ):
         self._metrics = metrics
         self._watchdog = watchdog
+        self._resilience = resilience or ResilienceMetrics()
         # Podemos registrar outros componentes (ex: regras, avatar) conforme a necessidade
 
     def get_snapshot(self) -> dict[str, Any]:
         """Obtém fotografia atual do sistema (útil para dashboard ou logs)."""
         engine_snap = self._metrics.snapshot()
         health_snap = self._watchdog.check()
+        resilience_snap = self._resilience.snapshot()
 
         return {
             "status": "healthy" if health_snap["all_healthy"] else "degraded",
             "health": health_snap["components"],
+            "resilience": resilience_snap,
             "queue": {
                 "depth_total": engine_snap["queue_depth_total"],
                 "depth_by_priority": engine_snap["queue_depth_by_priority"],

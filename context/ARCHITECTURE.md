@@ -63,6 +63,16 @@ Cada seta acima é um contrato. O objetivo é que cada camada só precise conhec
 - **QUEUE isola throughput**: a fila é o ponto que absorve o descompasso entre "quantos eventos chegam" e "quantos o Roblox consegue processar". É aqui que backpressure e drop policy vivem — não espalhado pelo código.
 - **ROBLOX_BRIDGE isola runtime do Roblox**: Luau não fala a língua interna do event engine. Ele só entende comandos de jogo já traduzidos.
 - **OBSERVABILITY evita falhas silenciosas**: Módulos desacoplados coletam métricas e audit logs sem bloquear o Event Loop ou atrapalhar os workers.
+- **`OperationalSnapshot`**: Coleta throughput, queue depth, health dos componentes via API. (Em tempo real).
+- **`Watchdog`**: Monitora o stall silencioso (deadlocks) marcando componentes como DEGRADED caso fiquem "idle" além do limite de timeout.
+- **`ResilienceMetrics`**: Rastrea estatísticas de recuperação, retries e drops para telemetria fina de resiliência.
+
+---
+
+## 4. Gerenciamento de Estado (Efêmero)
+Para garantir recuperação de crash extremamente limpa e evitar bloqueios em IO complexo (Banco de Dados), **nenhum estado transacional persistente é guardado**.
+1. Caches (`DeduplicationCache`, `InteractionState`): Ficam na memória; em caso de falha/reinício o estado volta zerado, com a desvantagem tolerável de repetir um re-play pontual de TikTok durante um brief window de inicialização.
+2. Filas (Queues): Em memória. Perdem-se os eventos que estavam roteados para as pontes externas. Apenas o TikTok buffer absorverá os novos do chat e reacenderá as integrações.
 
 ---
 

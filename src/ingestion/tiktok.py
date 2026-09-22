@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from TikTokLive import TikTokLiveClient
+from TikTokLive.client.errors import UserNotFoundError, UserOfflineError
 from TikTokLive.events import (
     CommentEvent,
     ConnectEvent,
@@ -32,7 +33,7 @@ from src.ingestion.normalizer import (
     normalize_follow,
     normalize_gift,
 )
-from src.observability.health import Watchdog, ComponentHealth
+from src.observability.health import ComponentState, Watchdog, ComponentHealth
 
 LOGGER = get_logger(__name__)
 ClientFactory = Callable[[str], Any]
@@ -108,6 +109,25 @@ class TikTokLiveConnector:
         if self._runner_task:
             await self._runner_task
 
+    async def _safe_disconnect(self, client: Any) -> None:
+        """Desconecta o cliente TikTok de forma segura, tratando coroutines.
+
+        TikTokLive 7.x pode retornar um coroutine de `disconnect`; await quando for.
+        Nunca propaga exceções — shutdown não deve esconder o erro original.
+        """
+        if client is None:
+            return
+        try:
+            result = client.disconnect(close_client=True)
+            if asyncio.iscoroutine(result):
+                try:
+                    await result
+                except Exception:
+                    pass  # o await falhou, mas o cliente já tentou desconectar
+        except Exception as exc:
+            self.metrics.last_error = type(exc).__name__
+            LOGGER.warning("TikTok disconnect falhou: %s", type(exc).__name__)
+
     async def stop(self) -> None:
         """Shutdown idempotente, inclusive durante conexão ou backoff."""
         runner_active = self._runner_task is not None and not self._runner_task.done()
@@ -120,13 +140,7 @@ class TikTokLiveConnector:
 
         self._state = ConnectionState.STOPPING
         self._stop_event.set()
-        client = self._client
-        if client is not None:
-            try:
-                client.disconnect(close_client=True)
-            except Exception as exc:  # shutdown não deve esconder o erro original
-                self.metrics.last_error = type(exc).__name__
-                LOGGER.warning("TikTok disconnect falhou durante shutdown: %s", type(exc).__name__)
+        await self._safe_disconnect(self._client)
 
         current = asyncio.current_task()
         if self._runner_task and self._runner_task is not current:
@@ -170,6 +184,21 @@ class TikTokLiveConnector:
                 self.metrics.disconnects += 1
                 if self._stop_event.is_set() or self._live_ended:
                     break
+                if isinstance(exc, UserNotFoundError):
+                    LOGGER.error(
+                        "TikTok: usuário '@%s' não encontrado ou nunca foi live "
+                        "(precisa ter 1000+ seguidores e já ter transmitido ao vivo). "
+                        "Inicie uma LIVE no TikTok antes de rodar o engine.",
+                        self.unique_id,
+                    )
+                    self._state = ConnectionState.FAILED
+                    return
+                if isinstance(exc, UserOfflineError):
+                    LOGGER.warning(
+                        "TikTok: usuário '@%s' está offline. "
+                        "Inicie uma LIVE no TikTok para conectar.",
+                        self.unique_id,
+                    )
                 if reconnect_attempts >= self.max_reconnect_attempts:
                     self._state = ConnectionState.FAILED
                     LOGGER.error("TikTok connector falhou após tentativas limitadas: %s", type(exc).__name__)
@@ -185,12 +214,7 @@ class TikTokLiveConnector:
                 client = self._client
                 self._client = None
                 self._client_task = None
-                if client is not None:
-                    try:
-                        client.disconnect(close_client=True)
-                    except Exception as exc:
-                        self.metrics.last_error = type(exc).__name__
-                        LOGGER.warning("TikTok disconnect falhou: %s", type(exc).__name__)
+                await self._safe_disconnect(client)
 
         if self._state not in {ConnectionState.FAILED, ConnectionState.STOPPING}:
             self._state = ConnectionState.STOPPED
@@ -221,8 +245,7 @@ class TikTokLiveConnector:
     async def _on_live_end(self, _event: LiveEndEvent) -> None:
         self._live_ended = True
         self._stop_event.set()
-        if self._client is not None:
-            self._client.disconnect(close_client=True)
+        await self._safe_disconnect(self._client)
         if self._health:
             self._health.state = ComponentState.STOPPED
             self._health.record_success()

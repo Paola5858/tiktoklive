@@ -128,6 +128,13 @@ Um teste passa apenas quando o comportamento esperado é observável e verificá
 
 - **Fase 1** (TikTok → Python) e **Fase 2** (Python → API local) são testáveis sem tocar em Roblox — priorizar essas antes de abrir o Studio.
 - **Fase 3** (API local → Roblox Studio) é onde o risco de localhost vira fato ou vira bloqueio — não seguir pra fase 4 sem essa resposta.
+
+### Fase 10: Resiliência e Chaos Testing
+- **Status**: Implementado e Testado
+- **Arquivos**: `test_resilience.py`, `test_chaos.py`, `test_restart_recovery.py`
+- **Cobertura Foco**: Valida shutdown graceful, overflow de filas, recuperação de timeouts, comportamento com falhas injetadas, reconexão de consumers lentos e expiração de cache efêmero.
+- **Resultado Esperado**: Todos passando. O load test chaos_slow_consumer prova a robustez da política drop-policy baseada em prioridades, e test_restart comprova o expurgo de caches efêmeros.
+
 - A fase de integração não avança para operação real enquanto Studio e ambiente publicado não tiverem resultados separados.
 
 ---

@@ -9,7 +9,10 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from src.observability.resilience import ResilienceMetrics
 
 
 class ComponentState(str, Enum):
@@ -76,6 +79,10 @@ class ComponentHealth:
             if self.state == ComponentState.READY:
                 self.state = ComponentState.DEGRADED
 
+    def report_degraded(self, reason: str) -> None:
+        """Alias de record_failure(is_critical=False) — para compatibilidade com callers externos."""
+        self.record_failure(reason, is_critical=False)
+
     def snapshot(self) -> dict[str, Any]:
         """Retorna uma representação segura para a API/logs."""
         return {
@@ -93,9 +100,15 @@ class ComponentHealth:
 class Watchdog:
     """Monitora a atividade de componentes para detectar travamentos silenciosos."""
 
-    def __init__(self, timeout_seconds: float = 30.0) -> None:
+    def __init__(
+        self,
+        timeout_seconds: float = 30.0,
+        resilience: "ResilienceMetrics | None" = None,
+    ) -> None:
         self.timeout_ms = timeout_seconds * 1000.0
         self.components: dict[str, ComponentHealth] = {}
+        self.check_triggered_count: int = 0  # watchdog_trigger_total
+        self._resilience = resilience
 
     def register(self, name: str) -> ComponentHealth:
         health = ComponentHealth(name=name)
@@ -105,6 +118,7 @@ class Watchdog:
     def check(self) -> dict[str, Any]:
         """Avalia todos os componentes registrados.
         Se um componente não reportar atividade além do timeout, é marcado como UNHEALTHY/DEGRADED.
+        Incrementa check_triggered_count quando algum componente é degradado.
         """
         current_time = now_ms()
         degraded_components = []
@@ -120,10 +134,14 @@ class Watchdog:
                     health.status = HealthStatus.UNHEALTHY
                     health.state = ComponentState.DEGRADED
                     health.failure_reason = f"Watchdog timeout: idle for {idle_time/1000.0:.1f}s"
-                degraded_components.append(name)
+                    self.check_triggered_count += 1
+                    if self._resilience:
+                        self._resilience.record_watchdog_trigger()
+                    degraded_components.append(name)
 
         return {
             "all_healthy": len(degraded_components) == 0,
             "degraded_components": degraded_components,
-            "components": {k: v.snapshot() for k, v in self.components.items()}
+            "components": {k: v.snapshot() for k, v in self.components.items()},
+            "watchdog_trigger_total": self.check_triggered_count,
         }

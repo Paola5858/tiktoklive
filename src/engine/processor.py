@@ -51,6 +51,7 @@ from src.engine.queue import PriorityQueueSet
 from src.logging import get_logger
 from src.observability.health import Watchdog, ComponentHealth
 from src.observability.audit import EventAuditLogger
+from src.observability.resilience import ResilienceMetrics
 
 LOGGER = get_logger(__name__)
 
@@ -68,11 +69,13 @@ class EventProcessor:
         dispatcher: Dispatcher,
         watchdog: Watchdog | None = None,
         audit_logger: EventAuditLogger | None = None,
+        resilience: ResilienceMetrics | None = None,
     ) -> None:
         self._config = config
         self._metrics = metrics
         self._dispatcher = dispatcher
         self._audit_logger = audit_logger
+        self._resilience = resilience
 
         self._queue = PriorityQueueSet(config, metrics)
         self._dedup = DeduplicationCache(
@@ -156,6 +159,8 @@ class EventProcessor:
             LOGGER.warning(
                 "EventProcessor: timeout no drain P0 após %.1fs", drain_timeout
             )
+            if self._resilience:
+                self._resilience.record_timeout()
 
         # Fechar a fila (workers saem do get_next())
         self._queue.close()
@@ -176,6 +181,10 @@ class EventProcessor:
 
         # Flush final do aggregator (abandonar buckets pendentes)
         self._aggregator.clear()
+
+        # Registra shutdown graceful (drain completou dentro do timeout)
+        if self._resilience:
+            self._resilience.record_graceful_shutdown()
 
         LOGGER.info(
             "EventProcessor encerrado. Métricas finais: %s",
@@ -334,6 +343,9 @@ class EventProcessor:
                 self._health.record_failure(
                     f"Worker {worker_id} crashed: {exc}", is_critical=True
                 )
+            if self._resilience:
+                self._resilience.record_unclean_shutdown()
+                self._resilience.record_recovery(success=False)
         finally:
             self._metrics.record_worker_stopped()
             LOGGER.debug("Worker %d encerrado", worker_id)

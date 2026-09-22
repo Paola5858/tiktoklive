@@ -81,6 +81,19 @@ O Roblox recebe eventos já priorizados e classificados. Nenhuma lógica de "iss
 
 O domínio do jogo recebe eventos e comandos abstratos. Regras de TikTok ficam no adaptador e no normalizer. Isso permite futuras fontes sem acoplar o Roblox a uma plataforma específica. Consequência: exige um schema interno versionado e uma etapa explícita de normalização.
 
+### Fase 10: Resiliência, Recuperação e Hardening
+**Contexto**: O sistema precisa lidar graciosamente com falhas parciais (ex: broker MQTT indisponível, OBS fechado, webhook Roblox lento) sem crashar o processo principal.
+**Decisão 1 - Sem Circuit Breakers**:
+- Foi analisado se precisávamos implementar Circuit Breakers (estado Open/Closed/Half-Open). Optamos por NÃO. Timeouts robustos (ex: 5s no OBS), bounded queues com drop por prioridade (max 100/nível), e disconnect handlers (retry logic com backoff exponencial capped - 2, 4, 8, 16, 30s) garantem robustez e resiliência sem adicionar a complexidade de gerenciar a máquina de estados do CB.
+**Decisão 2 - Estado Puramente Efêmero**:
+- Todos os caches (deduplication cache, queues limitadas de OBS/MQTT, interaction cooldown state) são efêmeros (em memória).
+- A vantagem é que um restart é garantido limpo — não sofremos com "poison pills" guardadas em SQLite ou Redis.
+- A desvantagem (aceitável) é uma pequena janela de tempo onde um evento replicado pelo TikTok poderá ser reprocessado ao ligar, mitigado rapidamente pelo preenchimento imediato da rule table.
+**Decisão 3 - Watchdog Flag**:
+- O Watchdog serve como um sensor de sanidade. O stall não mata a thread (apenas a sinaliza como DEGRADED) permitindo observabilidade via /health local, dando a chance de um shutdown ou reconnect assistido.
+**Decisão 4 - Chaos Testing Incorporado**:
+- Ao invés de testes convencionais unitários apenas, simuladores de slow e failing consumers validam as restrições de latência em cenários adversos de OOM e latência (Fase 10 tests).
+
 ## DECIDIDO — fila limitada com prioridade (ADR-002)
 
 A fila terá limite de capacidade e tratamento distinto por prioridade. Comentários de baixa prioridade podem ser agregados ou descartados; controle crítico e eventos de alto valor devem ter reserva ou política de overflow observável. Motivo: memória infinita não resolve throughput e pode derrubar o processo durante flood.

@@ -4,6 +4,7 @@ from src.engine.metrics import EngineMetrics
 from src.engine.dispatcher import Dispatcher, NullConsumer
 from src.engine.processor import EventProcessor
 from src.observability.health import Watchdog
+from src.observability.resilience import ResilienceMetrics
 from src.observability.metrics import OperationalSnapshot
 from src.adapters.roblox import RobloxBridge
 from src.adapters.local_api import create_app
@@ -11,7 +12,8 @@ from fastapi.testclient import TestClient
 
 async def main():
     metrics = EngineMetrics()
-    watchdog = Watchdog()
+    resilience = ResilienceMetrics()
+    watchdog = Watchdog(resilience=resilience)
 
     dispatcher = Dispatcher(metrics)
     bridge = RobloxBridge(watchdog=watchdog)
@@ -21,10 +23,11 @@ async def main():
         config=EngineConfig(),
         metrics=metrics,
         dispatcher=dispatcher,
-        watchdog=watchdog
+        watchdog=watchdog,
+        resilience=resilience,
     )
 
-    snapshot = OperationalSnapshot(metrics, watchdog)
+    snapshot = OperationalSnapshot(metrics, watchdog, resilience=resilience)
 
     app = create_app(bridge, snapshot)
 

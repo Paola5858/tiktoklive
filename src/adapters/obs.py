@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import re
@@ -47,12 +48,14 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from src.domain.events import AggregatedEvent, Event
 from src.domain.priorities import Priority
 from src.logging import get_logger
 from src.observability.health import ComponentHealth, Watchdog
+from src.observability.resilience import ResilienceMetrics
 
 LOGGER = get_logger(__name__)
 
@@ -463,6 +466,8 @@ class OBSPriorityQueue:
         self._dropped_total = 0
         self._queued_total = 0
         self._expired_total = 0
+        self._closed = False
+        self._has_items = asyncio.Event()
         # Dedupe: última dedupe_key vista por tipo de ação
         self._last_dedupe: dict[str, str] = {}
 
@@ -481,11 +486,19 @@ class OBSPriorityQueue:
     def depth(self) -> int:
         return sum(q.qsize() for q in self._queues)
 
+    def close(self) -> None:
+        self._closed = True
+        self._has_items.set()
+
     def put_nowait(self, action: OBSAction) -> bool:
         """Tenta enfileirar a ação. Retorna True se aceita, False se descartada.
 
         Overflow: drop do mais antigo P3/P4 — nunca drop P0/P1.
         """
+        if self._closed:
+            self._dropped_total += 1
+            return False
+
         p = max(0, min(4, action.priority))
         q = self._queues[p]
 
@@ -501,6 +514,7 @@ class OBSPriorityQueue:
 
             q.put_nowait(action)
             self._queued_total += 1
+            self._has_items.set()
             return True
         else:
             # P0/P1: nunca descartar por overflow
@@ -511,6 +525,7 @@ class OBSPriorityQueue:
                     self._dropped_total += 1
                     q.put_nowait(action)
                     self._queued_total += 1
+                    self._has_items.set()
                     return True
                 except asyncio.QueueEmpty:
                     pass
@@ -535,6 +550,8 @@ class OBSPriorityQueue:
                 if not q.empty():
                     try:
                         action = q.get_nowait()
+                        if self.depth() == 0:
+                            self._has_items.clear()
                         if action.is_expired():
                             self._expired_total += 1
                             LOGGER.debug(
@@ -547,8 +564,11 @@ class OBSPriorityQueue:
                     except asyncio.QueueEmpty:
                         continue
 
-            # Nenhuma fila tem item — esperar brevemente e tentar novamente
-            await asyncio.sleep(0.05)
+            if self._closed and self.depth() == 0:
+                raise StopAsyncIteration
+
+            # Nenhuma fila tem item — aguarda até que chegue algo ou feche
+            await self._has_items.wait()
 
 
 # ---------------------------------------------------------------------------
@@ -606,6 +626,7 @@ class OBSAdapter:
         config: OBSConfig | None = None,
         watchdog: Watchdog | None = None,
         action_mapping: list[dict[str, Any]] | None = None,
+        resilience: ResilienceMetrics | None = None,
     ) -> None:
         self._config = config or OBSConfig.disabled()
         self._state = OBSConnectionState.DISCONNECTED
@@ -613,6 +634,7 @@ class OBSAdapter:
         self._queue = OBSPriorityQueue(maxsize_per_level=max(4, self._config.obs_queue_maxsize // 5))
         self._validator = OBSActionValidator(self._config)
         self._action_mapping: list[dict[str, Any]] = action_mapping or []
+        self._resilience = resilience
 
         # Rastreamento de cena para idempotência e cooldown
         self._current_scene: str | None = None
@@ -705,6 +727,7 @@ class OBSAdapter:
         LOGGER.info("OBSAdapter: iniciando shutdown")
         self._state = OBSConnectionState.STOPPING
         self._stop_event.set()
+        self._queue.close()
 
         if self._temp_scene_task and not self._temp_scene_task.done():
             self._temp_scene_task.cancel()
@@ -723,6 +746,8 @@ class OBSAdapter:
 
         await self._disconnect()
         self._state = OBSConnectionState.STOPPED
+        if self._resilience:
+            self._resilience.record_graceful_shutdown()
         LOGGER.info("OBSAdapter: parado")
 
     # ------------------------------------------------------------------
@@ -783,6 +808,8 @@ class OBSAdapter:
 
             if self._health:
                 self._health.record_success()
+            if self._resilience:
+                self._resilience.record_recovery(success=True)
 
             LOGGER.info(
                 "OBSAdapter: conectado ao OBS em %s:%d",
@@ -799,6 +826,9 @@ class OBSAdapter:
             self._last_error = "Connection timeout"
             if self._health:
                 self._health.record_failure("OBS connection timeout")
+            if self._resilience:
+                self._resilience.record_timeout()
+                self._resilience.record_recovery(success=False)
             LOGGER.warning(
                 "OBSAdapter: timeout ao conectar em %s:%d",
                 self._config.host,
@@ -812,6 +842,8 @@ class OBSAdapter:
             self._last_error = error_msg
             if self._health:
                 self._health.record_failure(f"OBS connection failed: {error_msg}")
+            if self._resilience:
+                self._resilience.record_recovery(success=False)
             LOGGER.warning(
                 "OBSAdapter: falha ao conectar em %s:%d — %s",
                 self._config.host,
@@ -1291,6 +1323,36 @@ class OBSAdapter:
 # ---------------------------------------------------------------------------
 # Helpers internos
 # ---------------------------------------------------------------------------
+
+
+def load_obs_actions(path: str | Path) -> list[dict[str, Any]]:
+    """Carrega mapeamento de ações OBS a partir de arquivo JSON."""
+    file_path = Path(path)
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        LOGGER.warning("Não foi possível ler ações OBS de %s: %s", file_path, exc)
+        return []
+
+    if not isinstance(data, dict):
+        return []
+
+    rules = data.get("rules")
+    if not isinstance(rules, list):
+        return []
+
+    valid_actions: list[dict[str, Any]] = []
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        if not rule.get("enabled", True):
+            continue
+        action = rule.get("action")
+        if not action:
+            continue
+        valid_actions.append(rule)
+
+    return valid_actions
 
 
 def _event_id(event: Event | AggregatedEvent) -> str:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
@@ -25,6 +26,7 @@ from src.domain.priorities import Priority
 from src.interaction.models import GameEvent
 from src.logging import get_logger
 from src.observability.health import ComponentHealth, Watchdog
+from src.observability.resilience import ResilienceMetrics
 
 LOGGER = get_logger(__name__)
 
@@ -176,7 +178,7 @@ class MQTTMessage:
     retain: bool = False
 
     def is_expired(self) -> bool:
-        return asyncio.get_running_loop().time() >= self.expires_at
+        return time.monotonic() >= self.expires_at
 
 
 class MQTTPriorityQueue:
@@ -189,6 +191,8 @@ class MQTTPriorityQueue:
         ]
         self._dropped = 0
         self._queued = 0
+        self._closed = False
+        self._has_items = asyncio.Event()
 
     def depth(self) -> int:
         return sum(q.qsize() for q in self._queues)
@@ -197,11 +201,16 @@ class MQTTPriorityQueue:
         """Adiciona mensagem à fila por prioridade.
         Retorna: (aceito: bool, descartou_antigo: bool)
         """
+        if self._closed:
+            self._dropped += 1
+            return False, False
+
         p = max(0, min(4, msg.priority))
         q = self._queues[p]
         if not q.full():
             q.put_nowait(msg)
             self._queued += 1
+            self._has_items.set()
             return True, False
         else:
             if p <= 1:
@@ -210,6 +219,7 @@ class MQTTPriorityQueue:
                     self._dropped += 1
                     q.put_nowait(msg)
                     self._queued += 1
+                    self._has_items.set()
                     return True, True
                 except asyncio.QueueEmpty:
                     pass
@@ -219,15 +229,26 @@ class MQTTPriorityQueue:
     def dropped_count(self) -> int:
         return self._dropped
 
+    def close(self) -> None:
+        self._closed = True
+        self._has_items.set()
+
     async def get_next(self) -> MQTTMessage:
         while True:
             for q in self._queues:
                 if not q.empty():
                     try:
-                        return q.get_nowait()
+                        msg = q.get_nowait()
+                        if self.depth() == 0:
+                            self._has_items.clear()
+                        return msg
                     except asyncio.QueueEmpty:
                         continue
-            await asyncio.sleep(0.02)
+
+            if self._closed and self.depth() == 0:
+                raise StopAsyncIteration
+
+            await self._has_items.wait()
 
 
 class MQTTAdapter:
@@ -235,6 +256,7 @@ class MQTTAdapter:
         self,
         config: MQTTConfig | None = None,
         watchdog: Watchdog | None = None,
+        resilience: ResilienceMetrics | None = None,
     ) -> None:
         self._config = config or MQTTConfig.disabled()
         self._state = MQTTConnectionState.DISCONNECTED
@@ -242,6 +264,7 @@ class MQTTAdapter:
         self._queue = MQTTPriorityQueue(
             maxsize_per_level=max(1, self._config.max_queue_size // 5)
         )
+        self._resilience = resilience
 
         self._health: ComponentHealth | None = None
         if watchdog and self._config.enabled:
@@ -278,15 +301,17 @@ class MQTTAdapter:
     def _build_aiomqtt_client(self) -> aiomqtt.Client:
         tls_params = aiomqtt.TLSParameters() if self._config.tls_enabled else None
 
+        # aiomqtt.Client usa client_id via ClientOptions ou passa direto pro paho
+        # No aiomqtt 2.x, client_id vai no ClientOptions
         return aiomqtt.Client(
             hostname=self._config.host,
             port=self._config.port,
             username=self._config.username or None,
             password=self._config.password or None,
-            client_id=self._config.client_id,
             keepalive=self._config.keepalive,
             tls_params=tls_params,
             clean_session=True,
+            identifier=self._config.client_id,  # aiomqtt usa 'identifier' para client_id
         )
 
     async def publish_game_event(self, game_event: GameEvent) -> None:
@@ -295,7 +320,7 @@ class MQTTAdapter:
             return
 
         # Deduplicação baseada em event_id com TTL
-        now_mono = asyncio.get_running_loop().time()
+        now_mono = time.monotonic()
         if len(self._dedup_cache) > 1000:
             self._dedup_cache = {k: exp for k, exp in self._dedup_cache.items() if exp > now_mono}
 
@@ -355,8 +380,8 @@ class MQTTAdapter:
             payload=payload_bytes,
             qos=qos,
             priority=int(game_event.priority),
-            created_at=asyncio.get_running_loop().time(),
-            expires_at=asyncio.get_running_loop().time() + self._config.command_ttl_s,
+            created_at=now_mono,
+            expires_at=now_mono + self._config.command_ttl_s,
             retain=False,
         )
 
@@ -380,6 +405,7 @@ class MQTTAdapter:
         LOGGER.info("MQTTAdapter: parando")
         self._state = MQTTConnectionState.STOPPING
         self._stop_event.set()
+        self._queue.close()
 
         if self._worker_task and not self._worker_task.done():
             self._worker_task.cancel()
@@ -388,6 +414,8 @@ class MQTTAdapter:
             except asyncio.CancelledError:
                 pass
         self._state = MQTTConnectionState.STOPPED
+        if self._resilience:
+            self._resilience.record_graceful_shutdown()
         LOGGER.info("MQTTAdapter: parado")
 
     async def _run_loop(self) -> None:
@@ -409,6 +437,8 @@ class MQTTAdapter:
                     self._state = MQTTConnectionState.CONNECTED
                     if self._health:
                         self._health.record_success()
+                    if self._resilience:
+                        self._resilience.record_recovery(success=True)
                     LOGGER.info("MQTTAdapter: conectado ao broker %s", self._config.host)
 
                     # Subscrição a tópicos de telemetria e heartbeat de dispositivos
@@ -436,10 +466,14 @@ class MQTTAdapter:
             except aiomqtt.MqttError as e:
                 self._state = MQTTConnectionState.FAILED
                 if self._health:
-                    self._health.report_degraded(f"MQTT Error: {str(e)}")
+                    self._health.record_failure(f"MQTT Error: {str(e)}")
+                if self._resilience:
+                    self._resilience.record_recovery(success=False)
                 LOGGER.warning("MQTTAdapter: erro na conexão: %s", e)
             except Exception as e:
                 self._state = MQTTConnectionState.FAILED
+                if self._resilience:
+                    self._resilience.record_recovery(success=False)
                 LOGGER.exception("MQTTAdapter: falha crítica")
 
             if not self._config.reconnect_enabled:
@@ -464,14 +498,18 @@ class MQTTAdapter:
         )
 
         while True:
-            msg = await self._queue.get_next()
+            try:
+                msg = await self._queue.get_next()
+            except StopAsyncIteration:
+                return
+
             if msg.is_expired():
                 self._metrics.messages_expired_total += 1
                 continue
 
             # Aplicação real de rate limit
             if min_interval > 0:
-                elapsed = asyncio.get_running_loop().time() - last_publish_time
+                elapsed = time.monotonic() - last_publish_time
                 if elapsed < min_interval:
                     await asyncio.sleep(min_interval - elapsed)
 
@@ -480,7 +518,7 @@ class MQTTAdapter:
                     await self._client.publish(
                         msg.topic, payload=msg.payload, qos=msg.qos, retain=msg.retain
                     )
-                    last_publish_time = asyncio.get_running_loop().time()
+                    last_publish_time = time.monotonic()
                     self._metrics.publish_total += 1
                     if self._health:
                         self._health.record_success()

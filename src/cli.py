@@ -188,6 +188,64 @@ def cmd_simulate(args: argparse.Namespace) -> int:
     print(json.dumps({"mode": "simulation", "dry_run": args.dry_run, "input_events": args.count, "game_events": produced, "metrics": engine.metrics.snapshot()}, ensure_ascii=False))
     return 0
 
+def cmd_replay(args: argparse.Namespace) -> int:
+    _load_env_file_without_runtime_dependencies()
+    
+    log_file = Path(args.file)
+    if not log_file.is_file():
+        print(f"Erro: Arquivo de log não encontrado: {log_file}", file=sys.stderr)
+        return 2
+
+    rules_path = Path(os.environ.get("INTERACTION_RULES_PATH", "configs/interaction_rules.json"))
+    rules = load_rules_file(rules_path)
+    engine = InteractionRuleEngine(rules)
+    
+    produced = 0
+    processed = 0
+    
+    print(f"Reproduzindo eventos de: {log_file.name}...")
+    
+    try:
+        with log_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                try:
+                    data = json.loads(line)
+                    event = Event(
+                        event_type=EventType(data["event_type"]),
+                        source=data["source"],
+                        user=EventUser(data["user"]["name"], data["user"]["id"]),
+                        payload=data["payload"],
+                        event_id=data.get("event_id")
+                    )
+                    
+                    game_events = engine.evaluate(event)
+                    produced += len(game_events)
+                    
+                    if args.dry_run and game_events:
+                        for item in game_events:
+                            print(f"[REPLAY] {json.dumps(item.to_dict(), ensure_ascii=False)}")
+                    
+                    processed += 1
+                except (json.JSONDecodeError, KeyError, ValueError) as exc:
+                    print(f"Aviso: Ignorando linha malformada: {exc}", file=sys.stderr)
+    except OSError as exc:
+        print(f"Erro ao ler arquivo: {exc}", file=sys.stderr)
+        return 2
+
+    print(json.dumps({
+        "mode": "replay", 
+        "file": log_file.name, 
+        "dry_run": args.dry_run, 
+        "input_events": processed, 
+        "game_events": produced, 
+        "metrics": engine.metrics.snapshot()
+    }, ensure_ascii=False))
+    return 0
+
 
 def _load_env_file_without_runtime_dependencies() -> None:
     """Carrega apenas o .env necessário à simulação, sem importar o app."""
@@ -223,6 +281,10 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--interval", type=float, default=0.0, help="intervalo entre eventos, em segundos")
     simulate.add_argument("--dry-run", action="store_true", help="imprime GameEvents e não publica efeitos externos")
     simulate.set_defaults(func=cmd_simulate)
+    replay = sub.add_parser("replay", help="reproduz eventos a partir de um arquivo de log JSONL")
+    replay.add_argument("--file", required=True, help="caminho para o arquivo de log (ex: logs/events/event_2026-09-22.jsonl)")
+    replay.add_argument("--dry-run", action="store_true", help="imprime GameEvents e não publica efeitos externos")
+    replay.set_defaults(func=cmd_replay)
     return parser
 
 

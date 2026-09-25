@@ -276,6 +276,21 @@ class RobloxBridge:
 
         return result, cursor, gap_detected
 
+    def peek_recent(self, limit: int = 50) -> tuple[list[GameEventEnvelope], int, bool]:
+        """Lê uma janela recente sem registrar poll nem tocar no watchdog.
+
+        Usado por superfícies de observabilidade. O dashboard não é o Roblox e
+        não pode fabricar evidência de que o consumidor fez polling.
+        """
+        effective_limit = max(1, min(limit, self._config.max_events_per_poll))
+        with self._lock:
+            if not self._buffer:
+                return [], self._highest_sequence_ever, False
+            oldest = self._buffer[0].sequence_number
+            result = list(self._buffer)[-effective_limit:]
+            gap = oldest > 1
+            return result, self._highest_sequence_ever, gap
+
     def ack(self, up_to_sequence: int) -> int:
         """Registra até onde o Roblox confirma ter processado."""
         with self._lock:

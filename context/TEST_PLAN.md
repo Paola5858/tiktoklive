@@ -173,3 +173,13 @@ Cada cenário deve possuir seed ou fixture determinística quando possível. Dad
 - Smoke real `start → GET /health → status → stop` passou em modo simulation com porta temporária e removeu o PID file.
 - `liveengine check` sem `TIKTOK_UNIQUE_ID` falhou com exit code 2 e mensagem acionável, como esperado no modo live.
 - A suíte completa deve ser executada novamente antes de cada publicação. Compatibilidade efetivamente demonstrada nesta fase: Python 3.12/Linux. OBS, MQTT, LIVE real e Roblox Studio continuam testes externos separados.
+
+### Fase 12: Dashboard operacional, UX em tempo real e interface do produto
+
+- `test_dashboard.py` cobre a rota `/dashboard`, assets locais, snapshot operacional, regras read-only, redaction de logs e limite de 200 linhas.
+- A suíte completa terminou com **310 passed, 1 skipped** em Python 3.12/Linux. O skip continua sendo o teste que exige OBS Studio real.
+- A UI consome um único `/api/dashboard/snapshot` a cada 3 segundos; eventos ficam limitados a 50 e o browser não mantém histórico infinito.
+- Regressão cobre que abrir o dashboard não atualiza `RobloxBridge.last_poll_at`; somente o consumidor Roblox pode produzir essa evidência.
+- A Local API foi validada com TestClient. O smoke end-to-end deve validar `liveengine start`, `GET /dashboard`, `GET /api/dashboard/snapshot`, `GET /api/dashboard/rules`, `GET /api/dashboard/logs` e `liveengine stop` em modo simulation.
+- A validação visual deve ser feita em desktop, tablet, mobile e com `prefers-reduced-motion`. O sandbox não substitui a inspeção humana em navegador real para afirmar perfeição visual.
+- O dashboard não afirma atividade interna do Roblox, execução confirmada do OBS ou online de dispositivo MQTT sem evidência correspondente no backend.

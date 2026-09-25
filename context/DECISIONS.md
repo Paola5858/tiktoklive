@@ -278,3 +278,15 @@ TikTok, OBS, MQTT, gravação e Roblox são controlados por feature flags. OBS e
 
 O projeto usa `setuptools` via `pyproject.toml`, mantém dependências diretas declaradas e instala em venv com `pip install -e '.[dev]'`. A compatibilidade efetivamente testada nesta fase é Python 3.12 em Linux; Python 3.10+ permanece requisito declarado, mas não deve ser tratado como validado sem executar a suíte nesse interpretador.
 *** End Patch
+
+## DECIDIDO — dashboard operacional local na própria Local API (fase 12)
+
+A interface é servida por FastAPI em `/dashboard`, com assets locais versionados em `src/dashboard`. Não foi criado um segundo servidor frontend, CDN, WebSocket ou framework de estado. A aquisição usa um único polling de 3 segundos para `/api/dashboard/snapshot`; regras e logs são leituras limitadas sob demanda.
+
+## DECIDIDO — UI não altera evidência operacional
+
+O dashboard usa `RobloxBridge.peek_recent()` para ler eventos sem atualizar `last_poll_at` nem chamar o watchdog. Abrir a UI não pode fingir que o Roblox Studio fez polling. Da mesma forma, Roblox só aparece como observado quando há poll/ack real, OBS só é descrito como confirmado quando o adapter informa, e dispositivos MQTT só ficam online após heartbeat dentro da janela conhecida.
+
+## DECIDIDO — regras read-only e logs bounded
+
+A fase 12 não cria editor de DSL nem comandos de hardware na UI. Regras carregadas são exibidas somente para compreensão do caminho evento → regra → ação. Logs JSONL são lidos de forma limitada, com filtros simples e redaction defensiva de nomes de campos que possam conter credenciais. A UI não mantém histórico infinito.

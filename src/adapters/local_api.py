@@ -17,13 +17,23 @@ ele só expõe o que `RobloxBridge` já traduziu.
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from pathlib import Path
+from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from src.adapters.roblox import SCHEMA_VERSION, RobloxBridge
 from src.logging import get_logger
+from src.dashboard_api import (
+    MAX_EVENT_LIMIT,
+    MAX_LOG_LINES,
+    build_dashboard_payload,
+    load_rules_for_dashboard,
+    _read_recent_logs,
+)
 
 LOGGER = get_logger(__name__)
 
@@ -46,6 +56,9 @@ def create_app(
     bridge: RobloxBridge,
     snapshot: OperationalSnapshot | None = None,
     capabilities: dict[str, str] | None = None,
+    dashboard_provider: Callable[[], dict[str, Any]] | None = None,
+    rules_path: str = "configs/interaction_rules.json",
+    audit_log_dir: str = "logs/events",
 ) -> FastAPI:
     """Monta a aplicação FastAPI em torno de um `RobloxBridge` já existente."""
     app = FastAPI(
@@ -97,6 +110,53 @@ def create_app(
         """Registra até onde o Roblox confirma ter processado (observabilidade)."""
         acknowledged = bridge.ack(up_to_sequence=request.up_to_sequence)
         return {"acknowledged_up_to": acknowledged}
+
+    @app.get("/dashboard", include_in_schema=False)
+    async def dashboard() -> FileResponse:
+        """Interface operacional local, servida pela mesma API do engine."""
+        return FileResponse(Path(__file__).resolve().parent.parent / "dashboard" / "index.html")
+
+    @app.get("/dashboard/assets/{asset}", include_in_schema=False)
+    async def dashboard_asset(asset: str) -> FileResponse:
+        """Entrega somente os dois assets estáticos versionados da UI."""
+        if asset not in {"styles.css", "app.js"}:
+            raise HTTPException(status_code=404, detail="asset não encontrado")
+        return FileResponse(Path(__file__).resolve().parent.parent / "dashboard" / asset)
+
+    @app.get("/api/dashboard/snapshot")
+    async def dashboard_snapshot() -> dict[str, Any]:
+        if dashboard_provider:
+            return dashboard_provider()
+        return {
+            "snapshot": snapshot.get_snapshot() if snapshot else {"status": "unknown"},
+            "capabilities": capabilities or {},
+            "integrations": {},
+            "events": [],
+            "event_cursor": bridge.health_snapshot().get("highest_sequence_ever", 0),
+            "gap_detected": False,
+            "limits": {"events": MAX_EVENT_LIMIT, "logs": MAX_LOG_LINES},
+            "rules_path": rules_path,
+        }
+
+    @app.get("/api/dashboard/rules")
+    async def dashboard_rules() -> dict[str, Any]:
+        try:
+            return load_rules_for_dashboard(rules_path)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=503, detail=f"regras indisponíveis: {exc}") from exc
+
+    @app.get("/api/dashboard/logs")
+    async def dashboard_logs(
+        limit: int = Query(default=80, ge=1, le=MAX_LOG_LINES),
+        level: str = Query(default="", max_length=16),
+        component: str = Query(default="", max_length=80),
+        q: str = Query(default="", max_length=160),
+    ) -> dict[str, Any]:
+        return {
+            "logs": _read_recent_logs(audit_log_dir, limit=limit, level=level, component=component, query=q),
+            "limit": limit,
+            "source": audit_log_dir,
+        }
 
     @app.exception_handler(ValueError)
     async def _value_error_handler(_request: Any, exc: ValueError) -> None:

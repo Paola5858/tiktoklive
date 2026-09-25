@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0d12">
+  <title>Live Engine · Operação</title>
+  <link rel="stylesheet" href="/dashboard/assets/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail" aria-label="Navegação operacional">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">↗</span><div><strong>LIVE ENGINE</strong><small>controle local</small></div></div>
+      <nav>
+        <a class="nav-link active" href="#overview"><span>01</span>Visão geral</a>
+        <a class="nav-link" href="#activity"><span>02</span>Atividade</a>
+        <a class="nav-link" href="#integrations"><span>03</span>Integrações</a>
+        <a class="nav-link" href="#rules"><span>04</span>Regras</a>
+        <a class="nav-link" href="#logs"><span>05</span>Logs</a>
+      </nav>
+      <div class="rail-foot"><span class="dot" id="connection-dot"></span><span id="connection-label">aguardando API</span><button id="refresh-now" class="icon-button" type="button" title="Atualizar agora" aria-label="Atualizar agora">↻</button></div>
+    </aside>
+
+    <main class="main" id="overview">
+      <header class="topbar">
+        <div><p class="eyebrow">PAINEL OPERACIONAL / <span id="environment-label">LOCAL</span></p><h1>O que está acontecendo agora?</h1><p class="lede">Estado real do pipeline, sem maquiagem de dashboard. Se não há dado, a tela diz que não há.</p></div>
+        <div class="top-actions"><div class="last-update"><span class="pulse" id="update-pulse"></span><span>atualizado <strong id="last-updated">nunca</strong></span></div><button class="button secondary" id="check-api" type="button">verificar API</button></div>
+      </header>
+
+      <section class="hero-grid" aria-label="Estado atual">
+        <article class="hero-status panel"><div class="section-kicker">ESTADO DO SISTEMA</div><div class="status-row"><span class="status-orb" id="system-orb"></span><div><h2 id="system-status">Sem dados</h2><p id="system-detail">Aguardando o primeiro snapshot do backend.</p></div></div><div class="status-meta"><span id="mode-label">modo desconhecido</span><span id="capability-label">integrações não informadas</span></div></article>
+        <article class="metric panel"><span class="metric-label">eventos / min</span><strong id="events-rate">–</strong><span class="metric-note" id="events-rate-note">backend ainda sem amostra</span></article>
+        <article class="metric panel"><span class="metric-label">fila</span><strong id="queue-depth">–</strong><div class="meter"><span id="queue-meter"></span></div><span class="metric-note" id="queue-note">capacidade desconhecida</span></article>
+        <article class="metric panel"><span class="metric-label">latência p95</span><strong id="latency-p95">–</strong><span class="metric-note" id="latency-note">sem amostra suficiente</span></article>
+      </section>
+
+      <section class="section" id="activity"><div class="section-head"><div><p class="eyebrow">FLUXO RECENTE</p><h2>Atividade da live</h2></div><div class="filters"><label>tipo <select id="event-filter"><option value="all">todos</option><option value="GIFT">gifts</option><option value="COMMENT">comentários</option><option value="FOLLOW">follows</option><option value="GAME_COMMAND">ações</option></select></label><span class="small-note" id="event-window">janela limitada a 50</span></div></div><div class="activity-layout"><div class="event-table panel"><div class="table-head"><span>hora</span><span>tipo</span><span>origem / usuário</span><span>prioridade</span><span>id</span></div><div id="event-list" class="event-list"><div class="empty-state">Nenhum evento ainda.<small>Quando o backend receber eventos, eles aparecem nesta janela.</small></div></div></div><aside class="trace panel"><div class="section-kicker">LEITURA RÁPIDA</div><h3 id="trace-title">Sem interação selecionada</h3><p id="trace-copy">Clique em um evento para preservar a correlação e investigar o caminho até a ação.</p><div id="trace-fields" class="trace-fields"></div></aside></div></section>
+
+      <section class="section" id="integrations"><div class="section-head"><div><p class="eyebrow">SISTEMAS CONECTADOS</p><h2>Integrações</h2></div><span class="small-note">configured não significa conectado</span></div><div class="integration-grid"><article class="integration panel" id="card-tiktok"><div class="integration-top"><div class="integration-icon">TT</div><div><h3>TikTok LIVE</h3><p id="tiktok-target">alvo não configurado</p></div><span class="state-pill" id="tiktok-state">sem dados</span></div><dl id="tiktok-details"></dl></article><article class="integration panel" id="card-roblox"><div class="integration-top"><div class="integration-icon">RB</div><div><h3>Roblox Bridge</h3><p>entrega por polling HTTP</p></div><span class="state-pill" id="roblox-state">sem dados</span></div><dl id="roblox-details"></dl></article><article class="integration panel" id="card-obs"><div class="integration-top"><div class="integration-icon">OB</div><div><h3>OBS Studio</h3><p id="obs-scene">cena não informada</p></div><span class="state-pill" id="obs-state">desabilitado</span></div><dl id="obs-details"></dl></article><article class="integration panel" id="card-mqtt"><div class="integration-top"><div class="integration-icon">MQ</div><div><h3>MQTT / dispositivos</h3><p id="mqtt-broker">broker não informado</p></div><span class="state-pill" id="mqtt-state">desabilitado</span></div><dl id="mqtt-details"></dl></article></div></section>
+
+      <section class="split-section"><article class="panel queue-panel"><div class="section-head compact"><div><p class="eyebrow">PRESSÃO</p><h2>Fila por prioridade</h2></div><span class="small-note">dados do Event Engine</span></div><div id="priority-bars" class="priority-bars"><div class="empty-state">Sem profundidade de fila disponível.</div></div><div class="queue-summary" id="queue-summary"></div></article><article class="panel rules-panel" id="rules"><div class="section-head compact"><div><p class="eyebrow">CAUSALIDADE</p><h2>Regras carregadas</h2></div><span class="readonly">somente leitura</span></div><div id="rules-list" class="rules-list"><div class="empty-state">Carregando regras…</div></div></article></section>
+
+      <section class="section" id="logs"><div class="section-head"><div><p class="eyebrow">DEBUGGING</p><h2>Logs operacionais</h2></div><div class="log-controls"><label>nível <select id="log-level"><option value="">todos</option><option>INFO</option><option>WARNING</option><option>ERROR</option></select></label><label>buscar <input id="log-query" type="search" placeholder="mensagem ou id" maxlength="160"></label><button class="button secondary" id="log-refresh" type="button">atualizar</button></div></div><div class="logs panel"><div id="log-list"><div class="empty-state">Nenhum log estruturado disponível.</div></div></div></section>
+
+      <footer class="footer"><span>TikTok × Roblox Live Engine</span><span>dados do backend · atualização centralizada a cada 3s</span></footer>
+    </main>
+  </div>
+  <script src="/dashboard/assets/app.js" defer></script>
+</body>
+</html>

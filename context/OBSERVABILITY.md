@@ -118,3 +118,9 @@ A chamada `GET /health` do bridge retorna o seguinte formato de payload (incluin
 3. **Roblox Bridge Cheio:** Fica registrado no total de `events_evicted_total` dentro da propriedade `bridge`.
 4. **Roblox Fora do Ar:** Se o jogo no Roblox para de fazer pooling, o `last_activity_age_ms` do `RobloxBridgeConsumer` subirá, disparando a condição `unhealthy` no Watchdog.
 5. **OBS Offline ou Desconectado:** O `OBSAdapter` transita para `RECONNECTING` / `DEGRADED`. Ações de stream acumulam em sua `OBSPriorityQueue` sem bloquear a ingestão do TikTok ou os comandos do Roblox.
+
+## Dashboard operacional (fase 12)
+
+A mesma Local API agora serve `/dashboard` e as rotas de leitura `/api/dashboard/snapshot`, `/api/dashboard/rules` e `/api/dashboard/logs`. O snapshot combina este contrato com `RobloxBridge.health_snapshot()`, `TikTokLiveConnector.state`/`ConnectorMetrics`, `OBSAdapter.health_snapshot()` e o estado do `MQTTAdapter`.
+
+O browser atualiza `/api/dashboard/snapshot` uma vez a cada 3 segundos. A janela de eventos é limitada a 50 envelopes e a leitura de logs a 200 linhas. A UI não recalcula health, throughput ou latência e não troca ausência de dados por zero. Regras são somente leitura. A rota de logs aplica redaction defensiva a campos com nomes de senha, token, secret ou api key.

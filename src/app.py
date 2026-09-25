@@ -44,6 +44,7 @@ from src.observability.audit import EventAuditLogger
 from src.observability.health import Watchdog
 from src.observability.metrics import OperationalSnapshot
 from src.observability.resilience import ResilienceMetrics
+from src.dashboard_api import build_dashboard_payload
 
 LOGGER = get_logger(__name__)
 
@@ -231,6 +232,9 @@ class LiveEngineApp:
             bridge=self._roblox_bridge,
             snapshot=self._operational_snapshot,
             capabilities=self.capabilities,
+            dashboard_provider=self.dashboard_payload,
+            rules_path=self._config.interaction_rules_path,
+            audit_log_dir=self._config.audit_log_dir,
         )
 
         # 9. TikTok Connector
@@ -373,6 +377,87 @@ class LiveEngineApp:
             "obs_control": "ready" if self._obs_adapter else "disabled",
             "mqtt_output": "ready" if self._mqtt_adapter else "disabled",
             "event_recording": "ready" if self._audit_logger else "disabled",
+        }
+
+    def dashboard_payload(self) -> dict[str, Any]:
+        """Snapshot único consumido pela UI operacional."""
+        bridge = self._roblox_bridge
+        snapshot = self._operational_snapshot
+        if bridge is None or snapshot is None:
+            return {
+                "snapshot": {"status": "starting"},
+                "capabilities": self.capabilities,
+                "integrations": self.integration_snapshot(),
+                "events": [],
+                "event_cursor": 0,
+                "gap_detected": False,
+                "limits": {"events": 50, "logs": 200},
+                "rules_path": self._config.interaction_rules_path,
+            }
+        return build_dashboard_payload(
+            bridge=bridge,
+            snapshot_provider=snapshot.get_snapshot,
+            capabilities_provider=lambda: self.capabilities,
+            integration_provider=self.integration_snapshot,
+            rules_path=self._config.interaction_rules_path,
+        )
+
+    def integration_snapshot(self) -> dict[str, Any]:
+        """Estados atuais, preservando configured/connected/healthy separados."""
+        if self._tiktok_connector:
+            metrics = self._tiktok_connector.metrics
+            tiktok: dict[str, Any] = {
+                "configured": True,
+                "state": self._tiktok_connector.state.value,
+                "unique_id": self._tiktok_connector.unique_id,
+                "buffer_depth": self._tiktok_connector.buffer_depth,
+                "metrics": {
+                    "connection_attempts": metrics.connection_attempts,
+                    "successful_connections": metrics.successful_connections,
+                    "disconnects": metrics.disconnects,
+                    "reconnect_attempts": metrics.reconnect_attempts,
+                    "events_received": metrics.events_received,
+                    "events_normalized": metrics.events_normalized,
+                    "events_rejected": metrics.events_rejected,
+                    "events_dropped": metrics.events_dropped,
+                    "last_successful_connection": metrics.last_successful_connection.isoformat() if metrics.last_successful_connection else None,
+                    "last_received_event": metrics.last_received_event.isoformat() if metrics.last_received_event else None,
+                    "last_error": metrics.last_error,
+                },
+            }
+        else:
+            tiktok = {"configured": False, "state": "DISABLED", "unique_id": None, "buffer_depth": 0, "metrics": {}}
+
+        result: dict[str, Any] = {
+            "tiktok": tiktok,
+            "roblox": self._roblox_bridge.health_snapshot() if self._roblox_bridge else {"state": "DISABLED"},
+            "obs": self._obs_adapter.health_snapshot() if self._obs_adapter else {"status": "disabled", "enabled": False},
+            "mqtt": self._mqtt_snapshot(),
+        }
+        return result
+
+    def _mqtt_snapshot(self) -> dict[str, Any]:
+        if not self._mqtt_adapter:
+            return {"status": "disabled", "enabled": False, "connection_state": "DISABLED", "queue_depth": 0, "metrics": {}, "devices": []}
+        config = self._config.mqtt
+        devices = [
+            {
+                "device_id": device_id,
+                "state": "online" if self._mqtt_adapter.is_device_online(device_id) else "offline",
+                "last_seen": seen.isoformat(),
+                "capabilities": sorted(config.allowed_commands),
+            }
+            for device_id, seen in self._mqtt_adapter.device_last_seen.items()
+        ]
+        return {
+            "status": "connected" if self._mqtt_adapter.state.value == "CONNECTED" else self._mqtt_adapter.state.value.lower(),
+            "enabled": True,
+            "connection_state": self._mqtt_adapter.state.value,
+            "broker": {"host": config.host, "port": config.port, "tls": config.tls_enabled},
+            "queue_depth": self._mqtt_adapter.queue_depth,
+            "configured_devices": len(config.allowed_devices),
+            "devices": devices,
+            "metrics": self._mqtt_adapter.metrics.snapshot(),
         }
 
 

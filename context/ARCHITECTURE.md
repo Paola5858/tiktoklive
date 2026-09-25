@@ -156,6 +156,8 @@ Os valores abaixo são apenas baseline para experimento: comentários até 60 se
 src/
   app.py                 # implementado (fase 11) — composição, boot e shutdown
   cli.py                 # implementado (fase 11) — start/stop/status/check/simulate
+  dashboard/             # implementado (fase 12) — HTML, CSS e JS operacional local
+  dashboard_api.py       # implementado (fase 12) — snapshot, regras e logs bounded
   config.py              # implementado (fase 1) — Settings via variável de ambiente
   errors.py              # implementado (fase 1)
   logging.py             # implementado (fase 1)

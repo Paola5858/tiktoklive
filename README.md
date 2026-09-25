@@ -133,3 +133,9 @@ context/                   contratos, decisões, falhas e operação
 A resolução TikTok → usuário Roblox continua explícita e não automática. Combos econômicos, ranking, autenticação pública, publicação cloud, SaaS, billing, instalador complexo e auto-update estão fora da v1. A experiência publicada do Roblox não pode alcançar a Local API do creator via `localhost`. O modo `replay` está reservado no contrato, mas não há gravador/reprodutor completo de eventos nesta fase.
 
 Consulte `context/PROJECT_SPEC.md`, `context/ARCHITECTURE.md`, `context/DECISIONS.md`, `context/TEST_PLAN.md`, `context/RELIABILITY.md`, `context/FAILURE_MODES.md`, `context/OBSERVABILITY.md`, `context/INTERACTION_RULES.md`, `context/OBS_INTEGRATION.md` e `context/MQTT_INTEGRATION.md` para as decisões detalhadas.
+
+## dashboard operacional (fase 12)
+
+Com o processo em execução, abra [`http://127.0.0.1:8787/dashboard`](http://127.0.0.1:8787/dashboard). O painel usa o mesmo backend da ponte e mostra status real, atividade limitada, fila, latência quando disponível, Roblox, OBS, MQTT, regras read-only e logs bounded. Não há dados fictícios para preencher cards vazios.
+
+O dashboard atualiza o snapshot em um único polling de 3 segundos. Regras e logs são endpoints de leitura separados. A arquitetura visual e as limitações estão em [`context/UI_ARCHITECTURE.md`](context/UI_ARCHITECTURE.md). O comando `liveengine start` continua sendo a forma oficial de subir a Local API.

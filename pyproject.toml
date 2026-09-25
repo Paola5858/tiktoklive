@@ -33,3 +33,6 @@ testpaths = ["src/tests"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
+
+[tool.setuptools.package-data]
+src = ["dashboard/*.html", "dashboard/*.css", "dashboard/*.js"]
